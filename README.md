@@ -83,7 +83,7 @@ A week-2 snapshot, never edited. Every later claim is a delta from it. At the en
 
 ## Result 1: the headline that didn't flatter me
 
-![Detector MCC comparison with cluster-bootstrap confidence intervals](01-detector-mcc.png)
+![Detector MCC comparison with cluster-bootstrap confidence intervals](assets/01-detector-mcc.png)
 
 | Detector | P | R | F1 | MCC | MCC 95% CI | FPR |
 |---|---|---|---|---|---|---|
@@ -110,7 +110,7 @@ This result sits in the first screen of the README, not in a limitations appendi
 
 ## Result 2: where the detector is blind by construction
 
-![Recall by omission class](02-recall-by-class.png)
+![Recall by omission class](assets/02-recall-by-class.png)
 
 | Detector | ABSENT (n=281) | UNWIRED (n=19) | STUB (n=309) |
 |---|---|---|---|
@@ -174,7 +174,7 @@ I also added a falsification condition that was missing from the original task s
 
 ### Extraction quality
 
-![Extraction F1 against oracle requirements](04-extraction-quality.png)
+![Extraction F1 against oracle requirements](assets/04-extraction-quality.png)
 
 | Subset | Symbol-only F1 | Path-qualified F1 |
 |---|---|---|
@@ -190,7 +190,7 @@ This aligns with two decades of requirements-traceability research, which consis
 
 ### Detection under extracted requirements
 
-![The extraction tax](03-extraction-tax.png)
+![The extraction tax](assets/03-extraction-tax.png)
 
 | Condition | P | R | F1 | MCC |
 |---|---|---|---|---|
