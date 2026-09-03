@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The detector that lost — building OmitBench</title>
+<meta name="description" content="A benchmark for silent omissions in AI-agent code patches, and the measurements that didn't flatter it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#fbfaf7;
+  --ink:#17191d;
+  --muted:#71757c;
+  --rule:#e3e1dc;
+  --measure:#2f6f9f;
+  --finding:#c4453c;
+  --wash:#f2f1ec;
+
+  --serif:"Source Serif 4",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --col:41rem;
+  --wide:52rem;
+}
+
+*{box-sizing:border-box}
+
+html{-webkit-text-size-adjust:100%}
+
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:1.125rem;
+  line-height:1.62;
+  font-variant-numeric:tabular-nums;
+}
+
+::selection{background:#d8e6f1}
+
+a{color:var(--measure);text-underline-offset:.18em;text-decoration-thickness:.055em}
+a:hover{color:var(--ink)}
+a:focus-visible{outline:2px solid var(--measure);outline-offset:3px;border-radius:2px}
+
+/* ---------------------------------------------------------- shell */
+.shell{max-width:var(--wide);margin:0 auto;padding:0 1.5rem}
+.col{max-width:var(--col)}
+
+.masthead{
+  border-bottom:1px solid var(--rule);
+  padding:1.15rem 0;
+  margin-bottom:4.5rem;
+}
+.masthead .shell{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap}
+.mast-name{font-family:var(--mono);font-size:.8rem;font-weight:500;letter-spacing:.01em}
+.mast-meta{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+
+/* ---------------------------------------------------------- hero */
+.hero{margin-bottom:3.25rem}
+h1{
+  font-size:clamp(2.15rem,5.6vw,3.4rem);
+  line-height:1.08;
+  font-weight:700;
+  letter-spacing:-.021em;
+  margin:0 0 1.25rem;
+  max-width:20ch;
+}
+.standfirst{
+  font-size:1.28rem;
+  line-height:1.5;
+  color:#3a3d43;
+  margin:0;
+  max-width:44ch;
+}
+.byline{
+  font-family:var(--mono);
+  font-size:.78rem;
+  color:var(--muted);
+  margin-top:2rem;
+  padding-top:1rem;
+  border-top:1px solid var(--rule);
+  max-width:var(--col);
+}
+
+/* ---------------------------------------------------------- ledger */
+.ledger{
+  margin:0 0 4.25rem;
+  border-top:2px solid var(--ink);
+  border-bottom:1px solid var(--rule);
+}
+.ledger-head{
+  font-family:var(--mono);
+  font-size:.76rem;
+  color:var(--muted);
+  padding:.7rem 0 1.4rem;
+}
+.ledger-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:2.1rem 2.6rem;
+  padding-bottom:2.1rem;
+}
+.led-num{
+  font-family:var(--mono);
+  font-size:clamp(1.85rem,4.4vw,2.5rem);
+  font-weight:500;
+  letter-spacing:-.03em;
+  line-height:1;
+  display:block;
+  margin-bottom:.5rem;
+}
+.led-num.neg{color:var(--finding)}
+.led-num.pos{color:var(--measure)}
+.led-label{font-size:.98rem;line-height:1.42;color:#3a3d43;margin:0}
+.led-sub{font-family:var(--mono);font-size:.73rem;color:var(--muted);margin:.45rem 0 0}
+
+/* ---------------------------------------------------------- prose */
+h2{
+  font-size:1.62rem;
+  line-height:1.2;
+  font-weight:700;
+  letter-spacing:-.014em;
+  margin:3.9rem 0 1.1rem;
+  max-width:26ch;
+}
+h2 .seq{
+  font-family:var(--mono);
+  font-size:.82rem;
+  font-weight:500;
+  color:var(--muted);
+  display:block;
+  margin-bottom:.55rem;
+  letter-spacing:0;
+}
+h3{
+  font-size:1.14rem;
+  font-weight:600;
+  margin:2.4rem 0 .7rem;
+  letter-spacing:-.005em;
+}
+p{margin:0 0 1.15rem;max-width:var(--col)}
+.lede{font-size:1.2rem;color:#3a3d43}
+
+ul,ol{max-width:var(--col);padding-left:1.15rem;margin:0 0 1.3rem}
+li{margin-bottom:.6rem}
+li::marker{color:var(--muted)}
+
+code{
+  font-family:var(--mono);
+  font-size:.855em;
+  background:var(--wash);
+  padding:.1em .34em;
+  border-radius:2px;
+}
+strong{font-weight:700}
+em{font-style:italic}
+
+.rule{border:0;border-top:1px solid var(--rule);margin:3.4rem 0;max-width:var(--col)}
+
+/* ---------------------------------------------------------- figure */
+figure{margin:2.6rem 0 3rem;max-width:var(--wide)}
+figure img{
+  width:100%;
+  height:auto;
+  display:block;
+  background:#fff;
+  border:1px solid var(--rule);
+}
+figcaption{
+  font-size:.88rem;
+  line-height:1.45;
+  color:var(--muted);
+  margin-top:.75rem;
+  max-width:var(--col);
+}
+
+/* ---------------------------------------------------------- table */
+.tw{overflow-x:auto;margin:1.9rem 0 2.4rem;max-width:var(--wide)}
+table{
+  border-collapse:collapse;
+  width:100%;
+  font-size:.93rem;
+  font-variant-numeric:tabular-nums;
+}
+caption{
+  text-align:left;
+  font-size:.86rem;
+  color:var(--muted);
+  padding-bottom:.7rem;
+}
+th{
+  text-align:left;
+  font-weight:600;
+  font-size:.82rem;
+  color:var(--muted);
+  border-bottom:1px solid var(--ink);
+  padding:.42rem .8rem .42rem 0;
+  white-space:nowrap;
+}
+td{
+  padding:.5rem .8rem .5rem 0;
+  border-bottom:1px solid var(--rule);
+  vertical-align:baseline;
+}
+td.n,th.n{font-family:var(--mono);font-size:.85rem}
+tr.hl td{background:#f4f6f8}
+td.neg{color:var(--finding);font-weight:600}
+td.pos{color:var(--measure);font-weight:600}
+
+/* ---------------------------------------------------------- interval graphic */
+.interval{
+  margin:2.5rem 0 2.8rem;
+  max-width:var(--col);
+  padding:1.7rem 0 1.5rem;
+  border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+}
+.iv-title{font-size:.95rem;font-weight:600;margin:0 0 1.6rem}
+.iv-track{
+  position:relative;
+  height:2.6rem;
+  margin:0 0 .6rem;
+}
+.iv-axis{
+  position:absolute;left:0;right:0;top:1.3rem;
+  height:1px;background:var(--rule);
+}
+.iv-bar{
+  position:absolute;top:1.05rem;height:.5rem;
+  background:#cddceb;border-radius:1px;
+}
+.iv-point{
+  position:absolute;top:.55rem;
+  width:2px;height:1.5rem;background:var(--measure);
+}
+.iv-thresh{
+  position:absolute;top:.15rem;
+  width:1px;height:2.3rem;
+  background:var(--finding);
+}
+.iv-thresh::after{
+  content:attr(data-label);
+  position:absolute;top:-.15rem;left:.4rem;
+  font-family:var(--mono);font-size:.7rem;color:var(--finding);
+  white-space:nowrap;
+}
+.iv-scale{
+  display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:.72rem;color:var(--muted);
+}
+.iv-note{font-size:.9rem;color:var(--muted);margin:1.1rem 0 0;max-width:56ch}
+
+/* ---------------------------------------------------------- callout */
+.callout{
+  margin:2.7rem 0;
+  padding:1.5rem 0 1.5rem 1.5rem;
+  border-left:3px solid var(--finding);
+  max-width:var(--col);
+}
+.callout p:last-child{margin-bottom:0}
+.callout-h{font-weight:700;margin:0 0 .7rem}
+
+.protocol{
+  margin:2rem 0 2.6rem;
+  max-width:var(--col);
+  counter-reset:pr;
+}
+.pr-item{
+  border-top:1px solid var(--rule);
+  padding:1.2rem 0 .3rem 0;
+  counter-increment:pr;
+}
+.pr-item:last-child{border-bottom:1px solid var(--rule);margin-bottom:0}
+.pr-item h3{
+  margin:0 0 .5rem;
+  font-size:1.02rem;
+  display:flex;gap:.7rem;align-items:baseline;
+}
+.pr-item h3::before{
+  content:counter(pr);
+  font-family:var(--mono);
+  font-size:.78rem;
+  color:var(--muted);
+  font-weight:500;
+  flex:none;
+}
+.pr-item p{font-size:1rem;margin-bottom:.9rem}
+
+/* ---------------------------------------------------------- refs + foot */
+.refs{max-width:var(--col);font-size:.9rem;line-height:1.5}
+.refs li{margin-bottom:.75rem;color:#3a3d43}
+.refs a{word-break:break-word}
+
+.foot{
+  margin-top:4.5rem;
+  border-top:2px solid var(--ink);
+  padding:1.8rem 0 4rem;
+  max-width:var(--col);
+}
+.foot p{font-size:.95rem;color:var(--muted)}
+.foot .repo{font-family:var(--mono);font-size:.95rem;color:var(--ink)}
+
+/* ---------------------------------------------------------- responsive */
+@media (max-width:640px){
+  body{font-size:1.06rem}
+  .masthead{margin-bottom:3rem}
+  .ledger-grid{grid-template-columns:1fr;gap:1.9rem}
+  h2{margin-top:3rem}
+  .callout{padding-left:1.1rem}
+  figure{margin-left:-1.5rem;margin-right:-1.5rem;width:100vw;max-width:100vw}
+  figure img{border-left:0;border-right:0}
+  figcaption{padding:0 1.5rem}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="shell">
+    <span class="mast-name">OmitBench</span>
+    <span class="mast-meta">Engineering notes — Avnish Singh</span>
+  </div>
+</header>
+
+<main class="shell">
+
+  <div class="hero">
+    <h1>The detector that lost</h1>
+    <p class="standfirst">I built a benchmark for silent omissions in AI-agent code patches. My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
+    <p class="byline">310 labelled instances across 8 repositories. Every interval is a cluster bootstrap, resampled at instance level.</p>
+  </div>
+
+  <section class="ledger" aria-label="Headline results">
+    <p class="ledger-head">What the measurements said</p>
+    <div class="ledger-grid">
+
+      <div>
+        <span class="led-num neg">−0.202</span>
+        <p class="led-label">Paired MCC difference between my deterministic detector and a mid-tier LLM judge. The judge wins.</p>
+        <p class="led-sub">95% CI [−0.252, −0.150], excludes zero</p>
+      </div>
+
+      <div>
+        <span class="led-num neg">−0.935</span>
+        <p class="led-label">Detector MCC once requirements are extracted from issue text instead of the gold patch. Worse than random.</p>
+        <p class="led-sub">Oracle condition: +0.499</p>
+      </div>
+
+      <div>
+        <span class="led-num pos">0.043</span>
+        <p class="led-label">False positive rate — the one axis where the deterministic rule decisively beat the judge, and the entire basis for shipping it.</p>
+        <p class="led-sub">Judge FPR 0.113</p>
+      </div>
+
+      <div>
+        <span class="led-num pos">26.5<span style="font-size:.5em">ms</span></span>
+        <p class="led-label">p95 latency per instance for the shipped CI gate, against a 10-second acceptance bar.</p>
+        <p class="led-sub">Verified live on GitHub Actions</p>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="col">
+    <p class="lede">An AI coding agent opens a pull request. The description says it implemented three things. The diff implements two.</p>
+
+    <p>Nothing crashes. Tests pass, because the missing piece had no test. A reviewer skims a clean-looking diff, reads a confident summary, and merges. The omission surfaces three weeks later as a bug report nobody traces back to that PR.</p>
+
+    <p>This is the dominant failure class in agentic coding, and the literature has converged on it from several directions. SWE-Compass, clustering 600 error traces per model, found requirement misinterpretation (30–34%) and incomplete solutions with side effects (29–42%) together accounting for over 60% of failures, while technical knowledge gaps sat at 5–8%. The bottleneck is not that models cannot code. It is that they do not finish what was asked.</p>
+
+    <p>The most uncomfortable result comes from the false-success literature: in one study, 75.8% of self-assessing coding-agent trajectories that made explicit completion claims were false successes — and no LLM judge configuration tested exceeded AUROC 0.65 at catching it.</p>
+
+    <p>That number is what started this project. If agents fail silently, and the obvious fix — ask another model — barely beats a weighted coin, then the question worth asking is whether a boring deterministic rule does better.</p>
+
+    <p>It doesn't. Not overall. That turned out to be the most useful thing I learned.</p>
+  </div>
+
+  <hr class="rule">
+
+  <div class="col">
+    <h2>What the benchmark contains</h2>
+
+    <p>310 synthetic instances derived from merged commits across eight mature Python repositories: attrs, click, flask, httpx, itsdangerous, jinja, requests, werkzeug. 13,104 records, 2,184 requirements scored per detector, base rate 27.9% omitted.</p>
+
+    <p>Requirements are derived from the gold patch by AST diffing, producing a flat list of <code>(path, symbol)</code> pairs. A mutation then removes one requirement from the patch in one of three ways.</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <caption>Omission taxonomy, mapped to the empirical failure classes in the literature</caption>
+      <thead>
+        <tr><th>Class</th><th>What the mutation does</th><th class="n">n</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>ABSENT</strong></td><td>The symbol is never defined at all</td><td class="n">281</td></tr>
+        <tr><td><strong>UNWIRED</strong></td><td>The symbol is defined but never called from anywhere</td><td class="n">19</td></tr>
+        <tr><td><strong>STUB</strong></td><td>The symbol is defined with an empty or trivial body</td><td class="n">309</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>The taxonomy is not arbitrary. Published taxonomies of unimplemented requirements split along the same lines — missing component or feature at 32.4%, incomplete implementation at 18.1%. ABSENT is the missing component. STUB is the incomplete implementation. UNWIRED is the sneakiest of the three: the code exists, the symbol resolves, imports succeed, and nothing ever invokes it.</p>
+
+    <h2>The protocol, which mattered more than the code</h2>
+
+    <p>Six rules were frozen before a single number was measured. In hindsight these are the actual contribution — the detector is two hundred lines of AST walking. The protocol is what makes its numbers mean anything.</p>
+  </div>
+
+  <div class="protocol">
+
+    <div class="pr-item">
+      <h3><span>The detector never sees the gold patch</span></h3>
+      <p>This is SWE-bench's most-cited weakness. Independent audits found roughly 32.67% of successful patches involved solution leakage, with a further 31.08% passing on inadequate tests. Around 94% of instances predate major knowledge cutoffs, making memorization indistinguishable from reasoning. I enforce it with runtime canary tests that fail loudly if diff content ever reaches a detector's input.</p>
+    </div>
+
+    <div class="pr-item">
+      <h3><span>Measure once, never tune afterwards</span></h3>
+      <p>If the bar is not cleared, write the null result. Do not adjust the corpus, the threshold, or the prompt to improve the number. Easy to write down and genuinely uncomfortable to follow.</p>
+    </div>
+
+    <div class="pr-item">
+      <h3><span>MCC is the headline metric, not F1</span></h3>
+      <p>At a 27.9% base rate, F1 flatters classifiers that spray positives. Chicco and Jurman are unambiguous that accuracy and F1 produce inflated, misleading scores on imbalanced data, while MCC only scores high when a classifier performs across all four confusion-matrix cells. Concretely: the <code>flag-everything</code> baseline achieves F1 = 0.44, which would look respectable in a table. Its MCC is 0.000, which is the truth.</p>
+    </div>
+
+    <div class="pr-item">
+      <h3><span>Cluster bootstrap intervals at instance level</span></h3>
+      <p>Requirements inside one instance share a repository, a commit, and a specification. They are not independent draws. Naive row-level resampling would treat 2,184 correlated requirements as 2,184 independent observations and produce intervals far tighter than the evidence supports.</p>
+    </div>
+
+    <div class="pr-item">
+      <h3><span>Paired comparisons, not overlapping intervals</span></h3>
+      <p>Two independent confidence intervals overlapping does not establish that two detectors are indistinguishable. Every head-to-head claim here is a paired difference computed on identical instances.</p>
+    </div>
+
+    <div class="pr-item">
+      <h3><span>The pilot snapshot is frozen</span></h3>
+      <p>A week-two results file, never edited, with every later claim expressed as a delta from it. At project close I verified through git history that exactly one commit has ever touched that file, and it predates all the work being audited.</p>
+    </div>
+
+  </div>
+
+  <div class="col">
+    <h2><span class="seq">Finding 01</span>The result that didn't flatter me</h2>
+  </div>
+
+  <figure>
+    <img src="01-detector-mcc.png" alt="Bar chart of MCC by detector with 95% cluster-bootstrap confidence intervals. B0 and B1 at zero, B3 line-grep 0.371, B4 judge 0.388, P1 defined 0.499, B5 judge 0.701.">
+    <figcaption>Six detectors on the same 310 instances. The deterministic rule beats naive grep and a reasoning judge, and loses to a mid-tier judge.</figcaption>
+  </figure>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Detector</th><th class="n">P</th><th class="n">R</th><th class="n">F1</th><th class="n">MCC</th><th class="n">MCC 95% CI</th><th class="n">FPR</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>B0 flag-nothing</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">0.00</td><td class="n">0.000</td><td class="n">[0.000, 0.000]</td><td class="n">0.000</td></tr>
+        <tr><td>B1 flag-everything</td><td class="n">0.28</td><td class="n">1.00</td><td class="n">0.44</td><td class="n">0.000</td><td class="n">[0.000, 0.000]</td><td class="n">1.000</td></tr>
+        <tr><td>B3 line-grep</td><td class="n">0.75</td><td class="n">0.30</td><td class="n">0.43</td><td class="n">0.371</td><td class="n">[0.317, 0.421]</td><td class="n">0.039</td></tr>
+        <tr><td>B4 LLM judge</td><td class="n">0.40</td><td class="n">0.97</td><td class="n">0.56</td><td class="n">0.388</td><td class="n">[0.345, 0.434]</td><td class="n">0.569</td></tr>
+        <tr class="hl"><td><strong>P1 defined</strong></td><td class="n">0.80</td><td class="n">0.44</td><td class="n">0.57</td><td class="n">0.499</td><td class="n">[0.449, 0.545]</td><td class="n">0.043</td></tr>
+        <tr><td>B5 LLM judge</td><td class="n">0.74</td><td class="n">0.84</td><td class="n">0.79</td><td class="n">0.701</td><td class="n">[0.650, 0.756]</td><td class="n">0.113</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>Paired cluster bootstrap of MCC differences: P1 beats line-grep by +0.128 [+0.103, +0.156] and beats the reasoning judge by +0.111 [+0.055, +0.164]. It loses to the mid-tier judge by −0.202 [−0.252, −0.150].</p>
+
+    <p><strong>The interval excludes zero.</strong> This is not noise. The deterministic wedge I set out to demonstrate does not exist at the overall level.</p>
+
+    <p>That result sits in the first screen of the repository README, not in a limitations appendix. Burying it would have been trivial: report F1 only, where 0.57 against 0.79 reads as a smaller gap. Or report independent intervals and note that they overlap somewhat. Or quietly drop the judge for being a paid dependency. Rule two exists to stop exactly that.</p>
+
+    <p>What the deterministic rule <em>does</em> win is false positive rate: 0.043 against 0.113. That matters enormously for deployment and becomes the whole basis of the shipping decision. But it is a different claim from "the deterministic approach is better," and conflating the two would have been dishonest.</p>
+
+    <h2><span class="seq">Finding 02</span>Blind by construction, not by accident</h2>
+  </div>
+
+  <figure>
+    <img src="02-recall-by-class.png" alt="Grouped bar chart of recall by omission class. P1 achieves 0.96 on ABSENT and exactly 0.00 on both UNWIRED and STUB.">
+    <figcaption>Aggregate MCC conceals this. The detector is a specialist on one omission class and structurally incapable on the other two.</figcaption>
+  </figure>
+
+  <div class="col">
+    <p>The detector reaches 0.96 recall on ABSENT and exactly 0.00 on both UNWIRED and STUB. This is not a tuning failure. It asks one question — is this symbol defined in this file — and a stubbed function is still defined. An unwired function is still defined. The rule answers its question correctly and the question is insufficient for two of three classes.</p>
+
+    <p>Publishing the per-class breakdown rather than the aggregate is the difference between a benchmark and a marketing number. Anyone deploying this needs to know that a clean report means no symbols are entirely missing, not that nothing was omitted. That constraint later became a mandatory disclaimer inside the shipped tool's own output.</p>
+
+    <h2><span class="seq">Finding 03</span>Two detectors I built, measured, and deleted</h2>
+
+    <p>I also built P2 (defined and reachable) and P3 (defined, reachable, with a non-trivial body), expecting them to close the UNWIRED and STUB blind spots. They did fix recall — P3 reached 0.9868.</p>
+
+    <p>They also carried false positive rates of 0.83 and 0.84. MCC came out at 0.0868 and 0.2013. Neither beat the naive string-matching baseline.</p>
+
+    <p>The pre-agreed criterion was: beat grep, or be deleted with a written reason. I attempted the fix first, a public-API exemption to suppress false positives, measured it, and found it narrowed the gap without closing it. Both detectors were then removed from the registry with before-and-after numbers and full reasoning recorded.</p>
+
+    <p>Deleting two thirds of your novel contributions because they lost to <code>grep</code> is not enjoyable. It is what the protocol required, and it makes every surviving claim more credible.</p>
+
+    <h2><span class="seq">Finding 04</span>The real-world corpus that couldn't answer the question</h2>
+
+    <p>Synthetic mutations are a controlled instrument, not the world. So I collected eight real agent trajectories from live repositories — tqdm, bandit, marshmallow, mkdocs — with hand-labelled requirements.</p>
+
+    <p>Every one was a clean success. Zero of sixteen requirements were omitted. A degenerate positive class: recall is undefined when the thing you are detecting never occurs in your sample.</p>
+
+    <p>What I could measure was false-positive behaviour on real code, and it transferred. Real-corpus FPR came out at 0.062 against the synthetic 0.043 — a genuine external-validity signal that the detector does not start hallucinating omissions once it leaves the synthetic distribution.</p>
+
+    <p>But the honest framing is that this arm failed to answer its primary question, and the assumptions document says so. Eight instances with zero positives is not a validation. It is a pilot that tells you what to collect more of.</p>
+
+    <h2><span class="seq">Finding 05</span>The extraction tax</h2>
+
+    <p class="lede">This is the finding that matters, and it came from asking an uncomfortable question about my own benchmark.</p>
+
+    <p>Every number above depends on a hidden assumption: the requirement list is derived from the gold patch. The detector never sees that patch — the leakage guards enforce it — but the requirements it checks <em>against</em> were computed from it. That is a perfect-extraction oracle, which makes every result an upper bound.</p>
+
+    <p>In deployment nobody hands you the gold patch. You get an issue and a commit message, and you have to work out what was supposed to be built from text alone.</p>
+
+    <p>So I built an extractor that reads only the issue and commit text, never the diff, enforced by its own leakage guard, and emits a structured list of symbols and paths. Then I scored it against the oracle requirements and re-ran detection on its output.</p>
+
+    <p>Two decisions were locked before any measurement. Matching is purely structural — exact, case-sensitive multiset comparison with no model anywhere in the scoring path, because using an LLM to judge LLM-extracted text reintroduces precisely the noise this experiment exists to isolate. And two strictness levels are always reported together: symbol-only, which asks whether the model named the right function, and path-qualified, which also asks whether it knew the file.</p>
+
+    <p>I added a falsification condition the original task specification lacked: if extraction F1 came out above 0.9, the finding would be that extraction is not the bottleneck and the tax is small. That is a legitimate result. Writing it down beforehand meant I could not retroactively decide what counted as interesting.</p>
+  </div>
+
+  <figure>
+    <img src="04-extraction-quality.png" alt="Extraction F1 against oracle requirements. Symbol-only 0.066 overall, 0.220 on production symbols. Path-qualified near zero throughout. All far below the 0.9 falsification bar.">
+    <figcaption>Even on the fairest subset — production code only, the case the model has the best shot at — F1 reaches 0.220.</figcaption>
+  </figure>
+
+  <div class="col">
+    <p>The output was not degenerate. 150 of 310 extractions were non-empty, there were no parse failures, and spot checks showed real inference rather than word-copying. Given a vague commit message the model correctly returned nothing. Given a message that named a symbol explicitly, it got the name right and the file wrong. Only two path-qualified hits occurred in the entire corpus, both on commit messages that literally spelled out a file path.</p>
+
+    <p>This is consistent with two decades of requirements-traceability research, which reports that fully automated trace recovery falls short of the accuracy needed for unsupervised use. Recent LLM-based traceability work lands at 60–70% recall and positions itself explicitly as decision support under human oversight rather than automation.</p>
+  </div>
+
+  <figure>
+    <img src="03-extraction-tax.png" alt="MCC under three conditions. Oracle requirements +0.499. Symbol-identification only +0.006. Literal pipeline with LLM-supplied paths −0.935.">
+    <figcaption>Same instances, same detector, paired comparison. The only thing that changes is where the requirement list comes from.</figcaption>
+  </figure>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Condition</th><th class="n">P</th><th class="n">R</th><th class="n">F1</th><th class="n">MCC</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Oracle — requirements from gold patch</td><td class="n">0.802</td><td class="n">0.445</td><td class="n">0.572</td><td class="n pos">+0.499</td></tr>
+        <tr><td>Symbol match only, oracle path substituted</td><td class="n">0.923</td><td class="n">0.020</td><td class="n">0.039</td><td class="n">+0.006</td></tr>
+        <tr><td>Literal pipeline, extracted path used as-is</td><td class="n">0.046</td><td class="n">0.062</td><td class="n">0.053</td><td class="n neg">−0.935</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>Paired difference between oracle and the literal pipeline: <strong>+1.434 [+1.378, +1.488]</strong>.</p>
+
+    <p>Under literal deployment MCC goes negative — worse than flagging at random. The detector is path-qualified by design, so a wrong or missing path forces near-universal false omission verdicts: 791 false positives against 38 true ones.</p>
+
+    <p>The middle condition decomposes the failure. Once paths are corrected for symbol-matched items, precision recovers fully to 0.923 — when the model names the right symbol, the detector's verdict is trustworthy. But recall collapses to 0.020. The tax is dominated by the extractor rarely naming the right symbol at all, then catastrophically compounded by path errors under literal deployment.</p>
+
+    <p>The engineering conclusion is that requirement <em>extraction</em>, not omission <em>detection</em>, is the hard problem. A detector operating on free-text-derived requirements is not merely degraded. It is actively harmful. Total cost of establishing that: $0.057.</p>
+  </div>
+
+  <div class="col">
+    <h2>The bug that would have been p-hacking if I'd stayed quiet</h2>
+
+    <p>The middle condition's first implementation produced MCC −0.898. I inspected it and found the bug: non-matching items were still being scored with their broken paths, meaning that condition was dominated by the same path noise it existed to isolate. Corrected to include only items naming a real oracle symbol, it became +0.006.</p>
+
+    <p>A fix that moves your number from −0.898 to +0.006 is exactly the shape of a p-hack. So the honest question is whether the fix was justified independently of the result.</p>
+  </div>
+
+  <div class="callout">
+    <p class="callout-h">Three things, including the uncomfortable one</p>
+    <p><strong>The fix restores the specification rather than inventing one.</strong> That condition was defined before any code ran as symbol-identification only, with oracle paths substituted for symbol-matched items. Scoring non-matching items under it was always outside that definition.</p>
+    <p><strong>The headline number never moved.</strong> The literal-pipeline row is byte-identical across the buggy run, the fixed run, and an independent verification run. The fix touched only the diagnostic.</p>
+    <p><strong>But the trigger for finding the bug was the bad number, not a pre-registered check.</strong> I did not catch it by review. I caught it because −0.898 looked wrong. That ordering is worth stating plainly rather than dressing up.</p>
+  </div>
+
+  <div class="col">
+    <p>All three points are recorded permanently alongside both numbers, the full diff, and the honest order of operations. Anyone auditing this can see the −0.898 and judge for themselves.</p>
+
+    <p>This is the most transferable practice in the project: when a fix moves a number in the direction you wanted, publish the sequence, not just the justification. Reviewers can evaluate a justification. Only you know the sequence, so only you can disclose it.</p>
+
+    <h2><span class="seq">Finding 06</span>Shipping a gate that discloses its own uncertainty</h2>
+
+    <p>The final phase packaged the detector as a GitHub Action that comments on pull requests.</p>
+
+    <h3>Why the better detector doesn't ship</h3>
+
+    <p>The mid-tier judge has the higher MCC, 0.701 against 0.499. It does not ship, for two reasons.</p>
+
+    <p>It fails the bar it would be held to. The gate's acceptance criterion is precision at or above 0.80. The judge's precision is 0.74. Shipping it would mean overriding my own threshold because I preferred a different metric.</p>
+
+    <p>And a paid API call per pull request is an operational liability. This is not theoretical. The AI code review market has converged on false-positive control as the make-or-break variable, and practitioners state the reason bluntly: the cost of one false positive is seconds of attention, while the cost of a thousand is a team that has learned to scroll past every comment your tool posts. Independent head-to-head comparisons show the spread — roughly two false positives per run for the lowest-noise reviewer against about eleven for the highest-recall one, with the high-recall tool catching nearly double the bugs. That trade has a wrong side for a merge-blocking gate.</p>
+
+    <p>The deterministic rule's 0.043 false positive rate — the one axis where it decisively won — is exactly the property a gate needs. It is also offline, reproducible, and free per run.</p>
+
+    <h3>Requirements come from a checklist, never free text</h3>
+
+    <p>This is Finding 05 applied directly. The gate parses requirements from a structured markdown checklist in the pull request body. It does not attempt free-text extraction, because I measured that pipeline at −0.935 and it would ship a tool that is worse than useless.</p>
+
+    <p>That is a product decision made from a negative result. The measurement did not merely document a limitation. It eliminated a design I would otherwise have built.</p>
+
+    <h3>The gate publishes its own confidence interval</h3>
+  </div>
+
+  <div class="interval">
+    <p class="iv-title">Offline precision against the acceptance bar</p>
+    <div class="iv-track">
+      <div class="iv-axis"></div>
+      <div class="iv-bar" style="left:24.3%;width:54%"></div>
+      <div class="iv-thresh" data-label="bar 0.80" style="left:50%"></div>
+      <div class="iv-point" style="left:50.6%"></div>
+    </div>
+    <div class="iv-scale"><span>0.65</span><span>0.80</span><span>0.95</span></div>
+    <p class="iv-note">Point estimate 0.8018, clearing the bar by 0.0018. The 95% interval [0.723, 0.885] straddles it on both sides. A margin this thin is a margin you should expect to renegotiate.</p>
+  </div>
+
+  <div class="col">
+    <p>Hiding that would be indefensible, so the posted comment carries three things: which checklist symbol is missing from the diff, the structural blindness disclaimer, and the precision caveat with its interval. A test asserts the caveat is computed live from the frozen baseline rather than hardcoded, by swapping the baseline fixture and checking the rendered numbers change.</p>
+
+    <p>The gate has its own falsification condition too. If a future run drops precision below threshold, it suspends itself and flags the regression rather than silently continuing to post.</p>
+
+    <h3>Verified live, not only in pytest</h3>
+
+    <p>A throwaway pull request with a deliberately missing symbol. The workflow fired in eight seconds and posted a comment byte-identical to the renderer's expected output, with a precision value computed live from the frozen baseline. Measured latency: 12.0ms median, 26.5ms at p95, against a ten-second bar. 132 of 132 tests passing.</p>
+
+    <h2>What's still open</h2>
+
+    <ul>
+      <li><strong>UNWIRED remains underpowered</strong> at n=19 against a target of 100. Documented as directional rather than conclusive. It does not block the gate, whose criterion is overall precision, but it is not resolved.</li>
+      <li><strong>The extraction tax is measured only on synthetic data.</strong> With eight real instances and zero positives, the real corpus could not support the same analysis. Whether the tax is larger or smaller on genuine issue text is unknown.</li>
+      <li><strong>The precision margin is thin and its interval straddles the threshold.</strong> A modest corpus change could flip it. The gate is designed to suspend itself if that happens.</li>
+      <li><strong>The gate has been verified, not adopted.</strong> One live demonstration on my own repository proves the mechanism works. It is not evidence of value in a real team's workflow, and I am not going to claim otherwise.</li>
+    </ul>
+
+    <h2>What I'd tell someone starting something similar</h2>
+
+    <p><strong>Write the falsification condition before the code.</strong> Every task here had one except the final packaging task, and that was the only one where I found myself uncertain what would count as failure. The correlation is not a coincidence.</p>
+
+    <p><strong>Pick the headline metric before seeing any numbers.</strong> Choosing MCC was not clever, it was pre-committed. Had I chosen afterwards, an F1 of 0.44 for a baseline that flags everything would have made a much more comfortable table.</p>
+
+    <p><strong>Match your interval structure to your data's dependence structure.</strong> Getting this wrong does not produce a wrong point estimate. It produces intervals that lie, which is worse, because it is invisible.</p>
+
+    <p><strong>Build the ablation that could destroy your result.</strong> Finding 05 exists because I asked what my own benchmark assumed. It returned the most negative number in the project and the most useful one. If you cannot think of an assumption whose removal would hurt, you have not looked hard enough.</p>
+
+    <p><strong>A tool that hides its own error bars will be trusted exactly once.</strong> For anything that posts into a developer's workflow, uncertainty belongs in the output, not the appendix.</p>
+
+    <h2>References</h2>
+    <ol class="refs">
+      <li>Chicco, D. &amp; Jurman, G. (2020). The advantages of the Matthews correlation coefficient over F1 score and accuracy in binary classification evaluation. <em>BMC Genomics</em> 21:6.</li>
+      <li>Aleithan, R. et al. (2024). SWE-Bench+: enhanced coding benchmark for LLMs — solution leakage and weak-test analysis. arXiv:2410.06992</li>
+      <li>SWE-Compass: towards unified evaluation of agentic coding abilities. arXiv:2511.05459 — trajectory failure-mode distribution.</li>
+      <li>Benchmarking and studying the LLM-based agent system in end-to-end software development. arXiv:2511.04064 — taxonomy of unimplemented requirements.</li>
+      <li>From confident closing to silent failure: characterizing false success in LLM agents. arXiv:2606.09863</li>
+      <li>Bias in the loop: auditing LLM-as-a-judge for software engineering. arXiv:2604.16790</li>
+      <li>Reliability without validity: a systematic evaluation of LLM-as-a-judge models. arXiv:2606.19544</li>
+      <li>TraceLLM: leveraging large language models for enhanced requirements traceability. arXiv:2602.01253</li>
+      <li>Sourcegraph (2026). AI code review in 2026: how it works and how to adopt it.</li>
+      <li>Field, A. &amp; Welsh, A. (2007); Harden, J. (2011) — cluster bootstrap methods for clustered data.</li>
+    </ol>
+  </div>
+
+  <footer class="foot">
+    <p class="repo"><a href="https://github.com/Avnish1505/Omitbench">github.com/Avnish1505/Omitbench</a></p>
+    <p>Corpus, detectors, extraction pipeline, CI gate, frozen baselines, and the full assumptions log — including the numbers that did not work out.</p>
+  </footer>
+
+</main>
+
+</body>
+</html>
