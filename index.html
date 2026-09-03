@@ -453,7 +453,7 @@ td.pos{color:var(--measure);font-weight:600}
   </div>
 
   <figure>
-    <img src="01-detector-mcc.png" alt="Bar chart of MCC by detector with 95% cluster-bootstrap confidence intervals. B0 and B1 at zero, B3 line-grep 0.371, B4 judge 0.388, P1 defined 0.499, B5 judge 0.701.">
+    <img src="assets/01-detector-mcc.png" alt="Bar chart of MCC by detector with 95% cluster-bootstrap confidence intervals. B0 and B1 at zero, B3 line-grep 0.371, B4 judge 0.388, P1 defined 0.499, B5 judge 0.701.">
     <figcaption>Six detectors on the same 310 instances. The deterministic rule beats naive grep and a reasoning judge, and loses to a mid-tier judge.</figcaption>
   </figure>
 
@@ -486,7 +486,7 @@ td.pos{color:var(--measure);font-weight:600}
   </div>
 
   <figure>
-    <img src="02-recall-by-class.png" alt="Grouped bar chart of recall by omission class. P1 achieves 0.96 on ABSENT and exactly 0.00 on both UNWIRED and STUB.">
+    <img src="assets/02-recall-by-class.png" alt="Grouped bar chart of recall by omission class. P1 achieves 0.96 on ABSENT and exactly 0.00 on both UNWIRED and STUB.">
     <figcaption>Aggregate MCC conceals this. The detector is a specialist on one omission class and structurally incapable on the other two.</figcaption>
   </figure>
 
@@ -531,7 +531,7 @@ td.pos{color:var(--measure);font-weight:600}
   </div>
 
   <figure>
-    <img src="04-extraction-quality.png" alt="Extraction F1 against oracle requirements. Symbol-only 0.066 overall, 0.220 on production symbols. Path-qualified near zero throughout. All far below the 0.9 falsification bar.">
+    <img src="assets/04-extraction-quality.png" alt="Extraction F1 against oracle requirements. Symbol-only 0.066 overall, 0.220 on production symbols. Path-qualified near zero throughout. All far below the 0.9 falsification bar.">
     <figcaption>Even on the fairest subset — production code only, the case the model has the best shot at — F1 reaches 0.220.</figcaption>
   </figure>
 
@@ -542,7 +542,7 @@ td.pos{color:var(--measure);font-weight:600}
   </div>
 
   <figure>
-    <img src="03-extraction-tax.png" alt="MCC under three conditions. Oracle requirements +0.499. Symbol-identification only +0.006. Literal pipeline with LLM-supplied paths −0.935.">
+    <img src="assets/03-extraction-tax.png" alt="MCC under three conditions. Oracle requirements +0.499. Symbol-identification only +0.006. Literal pipeline with LLM-supplied paths −0.935.">
     <figcaption>Same instances, same detector, paired comparison. The only thing that changes is where the requirement list comes from.</figcaption>
   </figure>
 
