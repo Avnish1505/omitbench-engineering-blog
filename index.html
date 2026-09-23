@@ -338,6 +338,17 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
 }
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
 @media print{.topbar,.toc,.progress,.seg,.btn{display:none}.shell{display:block}.illus,.panel{break-inside:avoid}}
+
+/* finding 7 */
+.upd{font-family:var(--sans);font-size:.86rem;color:var(--muted);margin-top:-.6rem}
+.rel{position:relative}
+.rel svg{display:block;width:100%;height:auto}
+.rel .dot{cursor:pointer}
+.rel .dot:focus{outline:none}
+.rel .dot:focus-visible circle,.rel .dot:hover circle{stroke:#141413;stroke-width:2}
+.rtip{position:absolute;pointer-events:none;background:#141413;color:#FAF9F5;font-size:.78rem;line-height:1.4;padding:.45rem .6rem;border-radius:8px;white-space:nowrap;transform:translate(-50%,-115%);opacity:0;transition:opacity .12s}
+.rtip.on{opacity:1}
+.rtip b{font-weight:600}
 </style>
 </head>
 <body>
@@ -357,7 +368,7 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       <p class="hero-kicker">Benchmarking silent omissions in AI-agent code patches</p>
       <h1 class="hero-title">The detector that <s>won</s> lost</h1>
       <p class="hero-lede">My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
-      <p class="hero-meta"><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span><span>Avnish Singh</span></p>
+      <p class="hero-meta"><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span><span>Avnish Singh</span><span>Updated 23 Sep 2026</span></p>
     </div>
     <figure class="hero-art">
 <svg viewBox="0 0 520 440" role="img" aria-label="A task spec asks for three symbols. The agent patch claims all are done but only two exist. A deterministic check asks whether each symbol is defined, finds two present and flags one as omitted.">
@@ -427,6 +438,7 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li><a href="#f5">The extraction tax</a></li>
         <li><a href="#bug">The bug sequence</a></li>
         <li><a href="#ship">Shipping the gate</a></li>
+        <li><a href="#f7">A calibrated model?</a></li>
         <li><a href="#open">What's still open</a></li>
         <li><a href="#lessons">Advice</a></li>
         <li><a href="#refs">References</a></li>
@@ -438,7 +450,7 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
 
     <section id="short" class="short">
       <h2>The short version</h2>
-      <p>Seven questions the project set out to answer, and the answer it actually got. Each row links to the evidence.</p>
+      <p>Eight questions the project set out to answer, and the answer it actually got. Each row links to the evidence.</p>
       <ul class="verdicts">
         <li><a href="#f1">Does a deterministic detector beat LLM judges?</a><span class="pill no">No, not overall</span><span class="ev">Paired ΔMCC vs mid-tier judge −0.202 [−0.252, −0.150]</span></li>
         <li><a href="#f1">Does it beat naive grep and a reasoning judge?</a><span class="pill yes">Yes</span><span class="ev">+0.128 [+0.103, +0.156] and +0.111 [+0.055, +0.164]</span></li>
@@ -447,6 +459,7 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li><a href="#f5">Can requirements be extracted from issue text?</a><span class="pill no">No</span><span class="ev">F1 0.066 overall, 0.220 on production symbols</span></li>
         <li><a href="#f5">What does that cost detection?</a><span class="pill no">Everything</span><span class="ev">MCC +0.499 falls to −0.935</span></li>
         <li><a href="#ship">Is it deployable?</a><span class="pill mid">Narrowly</span><span class="ev">FPR 0.043, p95 26.5ms, verified live on GitHub</span></li>
+        <li><a href="#f7">Can a model sold as calibrated replace the judge?</a><span class="pill no">No</span><span class="ev">ΔMCC vs mid-tier judge −0.259 [−0.316, −0.203], ECE 0.323</span></li>
       </ul>
     </section>
 
@@ -881,12 +894,54 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       </div>
     </section>
 
+    <section id="f7">
+      <h2><span class="k">Finding 7</span>A model that ranks well and forecasts badly</h2>
+      <p class="upd">Added 23 September 2026.</p>
+      <p>The judge that won Finding 1 hands back a bare label. A gate built on it has nothing to threshold and no way to say "not sure, ask a human". So I tried a different kind of model. TypeSafe's Jev is a "System One" model: you send it state and typed yes/no questions, and it returns a probability for each one in about 100 milliseconds. The vendor describes those probabilities as calibrated. Its public documentation gives no calibration numbers.</p>
+      <p>This corpus is a good place to check that claim, because every requirement has a ground-truth label. Jev (B7) saw exactly the diff the mid-tier judge saw, under the same 6,000-token truncation, and was scored twice: as a judge, with paired MCC like every other detector, and as a forecaster, with Brier score, expected calibration error and a reliability table.</p>
+
+      <h3>Everything was fixed before the first call</h3>
+      <p>Two variants, one compound question per requirement and three split questions (defined, wired, real body) combined with a minimum. A 0.5 threshold. A 0.3 to 0.7 "ask a human" band, taken from TypeSafe's own docs. And a pass/fail rule for "calibrated": ECE at most 0.05, every well-populated bin within 0.10 of the diagonal, and positive skill over the base rate. All of it went into <code>ASSUMPTIONS.md</code> and was merged on GitHub before any real request, so the timestamp is not mine to edit. The question text is hash-locked by a test. The full sweep cost about 18 cents.</p>
+
+      <div class="panel">
+        <div class="panel-h"><h4>Paired ΔMCC, Jev minus rival</h4><span class="tag">Left of zero, Jev loses</span></div>
+        <div class="forest" id="forest7"></div>
+        <div class="axis" style="grid-template-columns:minmax(7rem,11rem) 1fr 11rem"><span></span><div><span>−0.5</span><span>0</span><span>+0.5</span></div><span></span></div>
+        <p class="cap">Cluster bootstrap over 310 instances, paired on identical inputs. The split variant against the deterministic rule is the only interval that touches zero.</p>
+      </div>
+
+      <p><strong>Jev loses to the mid-tier judge in both variants, and the calibration claim is not supported on this task.</strong> All three calibration conditions fail for both variants. The split variant beats the compound one on every measure, which is what TypeSafe's advice against compound questions predicts, but it still ends up statistically tied with the deterministic rule rather than anywhere near the judge.</p>
+
+      <div class="panel">
+        <div class="panel-h"><h4>Reliability: what Jev says against what happened</h4><span class="tag">On the diagonal means calibrated</span></div>
+        <div class="rel" id="rel"></div>
+        <div class="legend"><span><i style="background:#3A6FB0"></i>One compound question, hollow</span><span><i style="background:#D97757"></i>Three split questions, filled</span><span><i style="background:#CFCABD;height:2px;vertical-align:.2rem"></i>Perfect calibration</span></div>
+        <p class="cap">Each point is one bin of predicted P(omitted). Point area follows the number of requirements in the bin. Hover or tap a point for its numbers.</p>
+        <details class="table"><summary>Show the bins as a table</summary><div class="tw" id="reltable"></div></details>
+      </div>
+
+      <p>The failure has a clear shape. Nearly every point sits far below the diagonal, so Jev says "probably omitted" about code that is implemented. In the compound variant, 366 requirements landed in the bin where Jev's average P(omitted) was 0.84, and only 12% of them were actually omitted. That is the worst gap, 0.72. False positive rates follow directly: 0.691 for the compound variant and 0.500 for the split one, against 0.113 for the judge.</p>
+      <p>The interesting part is that the order is mostly right. Taken as scores, Jev's outputs separate omitted from implemented requirements well, with AUROC 0.910 for the compound variant and 0.936 for the split one. Those numbers are not directly comparable with a hard-label judge's, whose AUROC collapses to a single operating point. What they do say is that the problem is where the probabilities sit, not how they are ranked. A threshold picked after looking would score much better, and that is exactly the move the pre-registration rules out. A properly recalibrated Jev, fitted on held-out data and reported under a new detector name, is future work, not a rescue for this result.</p>
+      <p>For the use I had in mind, a Stop hook that refuses to let a coding agent claim "done", this settles it. In the split variant's confident range, outside the 0.3 to 0.7 band, Jev covers 69% of requirements and is wrong on 31% of them. A gate that is wrong on almost a third of its confident calls trains people to ignore it.</p>
+
+      <h3>What the mocks could not catch</h3>
+      <p>The harness passed every offline test before it met the real service. Four things still went wrong, and each is recorded in the assumptions log.</p>
+      <ul class="open">
+        <li><strong>The interpreter changed the corpus.</strong> Python 3.14 implements PEP 758, which lets <code>except A, B:</code> parse without parentheses. Old Python 2 code like <code>except BadSignature, e:</code> suddenly became valid, and five Python 2 commits slipped into one repository's corpus, 35 instances instead of 30. Rebuilt under 3.12, it matched exactly. The run now refuses to start on 3.14.</li>
+        <li><strong>A CDN blocked the default user agent.</strong> The first real request came back as Cloudflare error 1010, because Python's urllib announces itself by default and bot rules reject it. A local mock server has no Cloudflare in front of it.</li>
+        <li><strong>One 520 was not retried.</strong> An origin error outside the retry list dropped one variant. It was retried after the fix, which fills a gap rather than re-rolling a result, since no answer had ever been produced.</li>
+        <li><strong>Truncation made some inputs identical.</strong> In five variants the mutation falls past the 6,000-token cut, so the mutated diff is byte-identical to the clean one while the labels differ. Every judge, the winning one included, gets one of each pair wrong by construction. Two flask commits also turned out to be the same change. Both are documented, not excluded, because dropping cases after seeing results is the filtering this project exists to avoid.</li>
+      </ul>
+    </section>
+
     <section id="open">
       <h2>What's still open</h2>
       <ul class="open">
         <li><strong>Unwired remains underpowered</strong> at n=19 against a target of 100. Documented as directional rather than conclusive. It does not block the gate, whose criterion is overall precision, but it is not resolved.</li>
         <li><strong>The extraction tax is measured only on synthetic data.</strong> With eight real instances and zero positives, the real corpus could not support the same analysis.</li>
         <li><strong>The precision margin is thin</strong> and its interval straddles the threshold. A modest corpus change could flip it. The gate is designed to suspend itself if that happens.</li>
+        <li><strong>Jev was not recalibrated.</strong> Its scores rank well, so a calibration layer fitted on held-out data might make it usable. That would be a new detector, reported next to B7 rather than instead of it.</li>
+        <li><strong>The corpus has a duplicate commit and five truncation-identical variants.</strong> Deduplicating by diff hash at build time, then re-running every detector, is the fix.</li>
         <li><strong>The gate has been verified, not adopted.</strong> One live demonstration on my own repository proves the mechanism works. It is not evidence of value in a real team's workflow.</li>
       </ul>
     </section>
@@ -897,6 +952,7 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       <p><strong>Pick the headline metric before seeing any numbers.</strong>Had I chosen afterwards, an F1 of 0.44 for a baseline that flags everything would have made a much more comfortable table.</p>
       <p><strong>Match your interval structure to your data's dependence structure.</strong>Getting this wrong does not produce a wrong point estimate. It produces intervals that lie, invisibly.</p>
       <p><strong>Build the ablation that could destroy your result.</strong>Finding 5 exists because I asked what my own benchmark assumed. It returned the most negative number in the project and the most useful one.</p>
+      <p><strong>Pin the interpreter, not just the dependencies.</strong>A stdlib-only project still changed its own corpus when Python moved from 3.12 to 3.14. The full-corpus alignment check caught it. A 20-instance spot check would not have.</p>
       <p><strong>A tool that hides its own error bars will be trusted exactly once.</strong>For anything that posts into a developer's workflow, uncertainty belongs in the output, not the appendix.</p>
     </section>
 
@@ -913,6 +969,10 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li>TraceLLM: leveraging large language models for enhanced requirements traceability. arXiv:2602.01253</li>
         <li>Sourcegraph (2026). AI code review in 2026: how it works and how to adopt it.</li>
         <li>Field, A. &amp; Welsh, A. (2007); Harden, J. (2011). Cluster bootstrap methods for clustered data.</li>
+        <li>Brier, G. W. (1950). Verification of forecasts expressed in terms of probability. <em>Monthly Weather Review</em> 78(1).</li>
+        <li>Guo, C., Pleiss, G., Sun, Y. &amp; Weinberger, K. Q. (2017). On calibration of modern neural networks. <em>ICML</em>.</li>
+        <li>TypeSafe AI (2026). Jev documentation: Noul questions, confidence, and Jev 1.13 jaggedness. docs.typesafe.ai</li>
+        <li>PEP 758: Allow except and except* expressions without parentheses. peps.python.org/pep-0758</li>
       </ol>
     </section>
   </article>
@@ -1023,6 +1083,46 @@ function showCond(i){const c=C[i],mk=$('#mccmk');
  $('#taxcm').innerHTML=c.cm?`<div class="cm"><div>True positives<b>${c.cm[0]}</b></div><div class="bad">False positives<b>${c.cm[1]}</b></div><div class="bad">Missed<b>${c.cm[2]}</b></div><div>True negatives<b>${c.cm[3]}</b></div></div>`:'';
  $('#condnote').textContent=c.note}
 seg('condseg',d=>showCond(+d.c));showCond(0);
+
+/* finding 7: forest */
+const F7=[{n:'Compound vs judge',v:-.408,lo:-.465,hi:-.347},{n:'Split vs judge',v:-.259,lo:-.316,hi:-.203},{n:'Compound vs rule',v:-.206,lo:-.262,hi:-.144},{n:'Split vs rule',v:-.057,lo:-.117,hi:.003}];
+const x7=v=>(v+.5)/1*100;
+$('#forest7').innerHTML=F7.map(f=>{const tie=f.lo<=0&&f.hi>=0;return `<span>${f.n}</span><span class="trk ${tie?'':'neg'}"><span class="zero"></span><span class="ci" style="left:${x7(f.lo)}%;width:${x7(f.hi)-x7(f.lo)}%;${tie?'background:#8A877D':''}"></span><span class="pt" style="left:${x7(f.v)}%;${tie?'background:#8A877D':''}"></span></span><span class="val"><b>${sgn(f.v)}</b> [${sgn(f.lo)}, ${sgn(f.hi)}]${tie?' tie':''}</span>`}).join('');
+
+/* finding 7: reliability */
+const REL={
+ single:{name:'One compound question',c:'#3A6FB0',hollow:true,b:[[.044,.019,309],[.148,.013,75],[.253,.081,37],[.353,.147,34],[.445,.085,47],[.556,.118,93],[.653,.068,190],[.751,.057,418],[.838,.120,366],[.970,.810,615]]},
+ split:{name:'Three split questions',c:'#D97757',hollow:false,b:[[.059,.021,187],[.153,.006,167],[.248,.025,118],[.345,.012,167],[.445,.033,150],[.547,.033,180],[.644,.060,166],[.745,.128,219],[.848,.314,293],[.945,.853,537]]}};
+(function(){
+ const el=$('#rel');
+ function draw(){
+ const W=Math.max(300,Math.round(el.clientWidth||600)),H=W<520?Math.round(W*.95):400,small=W<520;
+ const L=small?44:52,R=12,T=14,B=46,pw=W-L-R,ph=H-T-B;
+ const px=v=>L+v*pw,py=v=>T+(1-v)*ph,rad=n=>Math.max(4,Math.sqrt(n)*(small?.45:.62));
+ let g='';
+ for(let i=0;i<=4;i++){const v=i/4,t=v.toFixed(2).replace(/0$/,'');g+=`<line x1="${L}" x2="${W-R}" y1="${py(v)}" y2="${py(v)}" stroke="#EFECE4"/><text x="${L-8}" y="${py(v)+4}" font-size="12" fill="#8A877D" text-anchor="end">${t}</text><text x="${px(v)}" y="${H-B+18}" font-size="12" fill="#8A877D" text-anchor="${i===4?'end':i===0?'start':'middle'}">${t}</text>`}
+ g+=`<line x1="${px(0)}" y1="${py(0)}" x2="${px(1)}" y2="${py(1)}" stroke="#CFCABD" stroke-width="2" stroke-dasharray="5 4"/>`;
+ g+=`<text x="${L+pw/2}" y="${H-6}" font-size="12.5" fill="#5E5D59" text-anchor="middle">Jev's mean P(omitted) in the bin</text>`;
+ g+=`<text transform="translate(13 ${T+ph/2}) rotate(-90)" font-size="12.5" fill="#5E5D59" text-anchor="middle">Share actually omitted</text>`;
+ const wb=REL.single.b[8],lx=px(.03),ly=py(small?.78:.72);
+ g+=`<line x1="${px(.30)}" y1="${ly+8}" x2="${px(wb[0])-rad(wb[2])-3}" y2="${py(wb[1])-rad(wb[2])+2}" stroke="#8A877D" stroke-width="1"/>`;
+ g+=`<text x="${lx}" y="${ly-8}" font-size="12.5" fill="#3D3D3A"><tspan x="${lx}">Worst bin, compound variant:</tspan><tspan x="${lx}" dy="16">Jev said 0.84, reality was 0.12</tspan></text>`;
+ for(const k of ['single','split']){const s=REL[k];
+  g+=`<polyline fill="none" stroke="${s.c}" stroke-width="2" stroke-linejoin="round" opacity=".55" points="${s.b.map(b=>px(b[0])+','+py(b[1])).join(' ')}"/>`;
+  s.b.forEach((b,i)=>{g+=`<g class="dot" tabindex="0" data-k="${k}" data-i="${i}" role="img" aria-label="${s.name}: predicted ${b[0].toFixed(3)}, observed ${b[1].toFixed(3)}, n=${b[2]}"><circle cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])}" fill="${s.hollow?'#fff':s.c}" stroke="${s.hollow?s.c:'#fff'}" stroke-width="2"/><circle cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])+8}" fill="transparent"/></g>`})}
+ el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Reliability diagram. Both Jev variants sit far below the diagonal for predicted P(omitted) between 0.1 and 0.9, meaning Jev overstates omission. Only the top bin comes close to the diagonal." font-family="'Instrument Sans',Arial,sans-serif">${g}</svg><div class="rtip" id="rtip"></div>`;
+ }
+ draw();let rw=el.clientWidth;addEventListener('resize',()=>{if(Math.abs(el.clientWidth-rw)>8){rw=el.clientWidth;draw()}});
+ function show(e){const tip=$('#rtip'),d=e.target.closest&&e.target.closest('.dot');if(!d){tip.classList.remove('on');return}
+  const s=REL[d.dataset.k],b=s.b[+d.dataset.i],r=el.getBoundingClientRect(),c=d.querySelector('circle').getBoundingClientRect();
+  tip.innerHTML=`<b>${s.name}</b><br>Predicted ${b[0].toFixed(3)}, observed ${b[1].toFixed(3)}<br>${b[2]} requirements`;
+  tip.classList.add('on');const hw=tip.offsetWidth/2;
+  tip.style.left=Math.min(Math.max(c.left+c.width/2-r.left,hw),r.width-hw)+'px';tip.style.top=(c.top-r.top)+'px'}
+ el.addEventListener('pointerover',show);el.addEventListener('focusin',show);
+ el.addEventListener('pointerleave',()=>$('#rtip').classList.remove('on'));el.addEventListener('focusout',()=>$('#rtip').classList.remove('on'));
+ const bins=['0.0–0.1','0.1–0.2','0.2–0.3','0.3–0.4','0.4–0.5','0.5–0.6','0.6–0.7','0.7–0.8','0.8–0.9','0.9–1.0'];
+ $('#reltable').innerHTML='<table class="data"><thead><tr><th>P(omitted) bin</th><th>Compound: predicted</th><th>observed</th><th>n</th><th>Split: predicted</th><th>observed</th><th>n</th></tr></thead><tbody>'+bins.map((bn,i)=>{const a=REL.single.b[i],c=REL.split.b[i];return `<tr><td>${bn}</td><td>${a[0].toFixed(3)}</td><td>${a[1].toFixed(3)}</td><td>${a[2]}</td><td>${c[0].toFixed(3)}</td><td>${c[1].toFixed(3)}</td><td>${c[2]}</td></tr>`}).join('')+'</tbody></table><p class="cap">Overall: compound Brier 0.316, ECE 0.390, AUROC 0.910. Split Brier 0.234, ECE 0.323, AUROC 0.936. Mid-tier judge as a 0/1 forecaster: Brier 0.126. Source: results/b7_calibration.txt.</p>';
+})();
 })();
 </script>
 </body>

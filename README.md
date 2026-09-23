@@ -270,11 +270,55 @@ A throwaway PR with a deliberately missing symbol. The workflow fired in **8 sec
 
 ---
 
+## Result 7: a model that ranks well and forecasts badly
+
+*Added 23 September 2026.*
+
+The judge that won Result 1 hands back a bare label. A gate built on it has nothing to threshold and no way to say "not sure, ask a human". So I tried a different kind of model. TypeSafe's Jev is a "System One" model: you send it state and typed yes/no questions, and it returns a probability for each one in about 100 milliseconds. The vendor describes those probabilities as calibrated. Its public documentation gives no calibration numbers.
+
+This corpus is a good place to check that claim, because every requirement has a ground-truth label. Jev (B7) saw exactly the diff the mid-tier judge saw, under the same 6,000-token truncation, and was scored twice: as a judge, with paired MCC like every other detector, and as a forecaster, with Brier score, expected calibration error (ECE) and a reliability table.
+
+**Everything was fixed before the first call.** Two variants: one compound question per requirement, and three split questions (defined, wired, real body) combined with a minimum. A 0.5 threshold. A 0.3 to 0.7 "ask a human" band, taken from TypeSafe's own docs. A pass/fail rule for "calibrated": ECE at most 0.05, every bin with n ≥ 30 within 0.10 of the diagonal, and positive skill over the base rate. All of it went into `ASSUMPTIONS.md` §13 and was merged on GitHub before any real request. The question text is hash-locked by a test. The full sweep cost about 18 cents.
+
+| Paired ΔMCC, Jev minus rival | Δ | 95% CI |
+|---|---|---|
+| Compound vs mid-tier judge (B5) | −0.408 | [−0.465, −0.347] |
+| Split vs mid-tier judge (B5) | −0.259 | [−0.316, −0.203] |
+| Compound vs deterministic rule (P1) | −0.206 | [−0.262, −0.144] |
+| Split vs deterministic rule (P1) | −0.057 | [−0.117, +0.003], tie |
+
+| Forecaster | Brier | ECE | AUROC | FPR at 0.5 |
+|---|---|---|---|---|
+| Jev, compound | 0.316 | 0.390 | 0.910 | 0.691 |
+| Jev, split | 0.234 | 0.323 | 0.936 | 0.500 |
+| Mid-tier judge, bare labels as 0/1 | 0.126 | — | — | 0.113 |
+
+**Jev loses to the mid-tier judge in both variants, and the calibration claim is not supported on this task.** All three calibration conditions fail for both variants. The split variant beats the compound one on every measure, which is what TypeSafe's advice against compound questions predicts, but it only ties the deterministic rule.
+
+The failure has a clear shape: almost every reliability bin sits far below the diagonal, so Jev says "probably omitted" about code that is implemented. In the compound variant, 366 requirements landed in the bin where Jev's average P(omitted) was 0.84, and 12% of them were actually omitted. That is the worst gap, 0.72.
+
+The order is mostly right, though. As scores, Jev's outputs separate omitted from implemented requirements well (AUROC 0.910 and 0.936). That is not directly comparable with a hard-label judge, whose AUROC collapses to one operating point, but it does say the problem is where the probabilities sit, not how they are ranked. A threshold picked after looking would score much better, and that is exactly the move the pre-registration rules out. A recalibrated Jev, fitted on held-out data and reported under a new detector name, is future work, not a rescue for this result.
+
+For the use I had in mind, a Stop hook that refuses to let a coding agent claim "done", this settles it. Outside the 0.3 to 0.7 band, the split variant covers 69% of requirements and is wrong on 31% of them.
+
+**What the mocks could not catch.** The harness passed every offline test before it met the real service. Four things still went wrong, all recorded in the assumptions log:
+
+- **The interpreter changed the corpus.** Python 3.14 implements PEP 758, so Python 2 code like `except BadSignature, e:` now parses. Five Python 2 commits slipped into one repository's corpus (35 instances instead of 30). Rebuilt under 3.12, it matched exactly, and the run now refuses to start on 3.14.
+- **A CDN blocked the default user agent.** The first real request came back as Cloudflare error 1010, because bot rules reject urllib's default User-Agent. A local mock server has no Cloudflare in front of it.
+- **One 520 was not retried.** It was retried after the fix. No answer had ever been produced, so this filled a gap rather than re-rolling a result.
+- **Truncation made some inputs identical.** In five variants the mutation falls past the 6,000-token cut, so the mutated diff is byte-identical to the clean one while the labels differ. Every judge, the winner included, gets one of each pair wrong by construction. Two flask commits also turned out to be the same change. Both are documented, not excluded.
+
+Sources: `results/b7_analyze.txt`, `results/b7_calibration.txt`, `results/calibration_b7.json` in the OmitBench repository.
+
+---
+
 ## What's still open, stated plainly
 
 - **UNWIRED remains underpowered.** n=19 against a target of n≥100. The README calls it directional, not conclusive. It does not block the gate — whose acceptance criterion is overall precision — but it is not resolved.
 - **The extraction tax is measured only on synthetic data.** With n=8 and zero positives, the real corpus could not support the same analysis. Whether the tax is larger or smaller on real issue text is genuinely unknown.
 - **The 0.80 precision margin is thin and the CI straddles it.** A modest corpus change could flip it. The gate is designed to suspend itself if that happens, but a bar you clear by 0.0018 is a bar you should expect to renegotiate.
+- **Jev was not recalibrated.** Its scores rank well, so a calibration layer fitted on held-out data might make it usable. That would be a new detector, reported next to B7 rather than instead of it.
+- **The corpus has a duplicate commit and five truncation-identical variants.** Deduplicating by diff hash at build time, then re-running every detector, is the fix.
 - **The gate has been verified, not adopted.** One live demo PR on my own repository is proof the mechanism works. It is not evidence of value in a real team's workflow, and I'm not going to claim otherwise.
 
 ---
@@ -291,6 +335,8 @@ A throwaway PR with a deliberately missing symbol. The workflow fired in **8 sec
 
 **When you fix a bug that helps your numbers, publish the sequence.** Not just the justification — the order of operations. Reviewers can evaluate a justification. Only you know the sequence, so only you can disclose it.
 
+**Pin the interpreter, not just the dependencies.** A stdlib-only project still changed its own corpus when Python moved from 3.12 to 3.14. The full-corpus alignment check caught it. A 20-instance spot check would not have.
+
 **A tool that hides its own error bars will be trusted exactly once.** For anything that posts into a developer's workflow, uncertainty belongs in the output, not the appendix.
 
 ---
@@ -306,6 +352,7 @@ A throwaway PR with a deliberately missing symbol. The workflow fired in **8 sec
 | Can requirements be extracted from issue text alone? | **No** | F1 0.066 overall, 0.220 on production symbols |
 | What does that cost detection? | **Everything** | MCC +0.499 → −0.935, paired Δ +1.434 |
 | Is it deployable? | **Yes, narrowly scoped** | FPR 0.043, p95 26.5ms, verified live on GitHub |
+| Can a model sold as calibrated replace the judge? | **No** | ΔMCC vs B5 −0.259 [−0.316, −0.203]; ECE 0.323 |
 
 ---
 
@@ -321,6 +368,10 @@ A throwaway PR with a deliberately missing symbol. The workflow fired in **8 sec
 8. *TraceLLM: Leveraging Large Language Models with Prompt Engineering for Enhanced Requirements Traceability.* arXiv:2602.01253 — traceability recall ceilings and the semi-automation framing.
 9. Sourcegraph (2026). *AI Code Review in 2026: How It Works and How to Adopt It.* — false-positive economics in PR-facing tooling.
 10. Field, A. & Welsh, A. (2007); Harden, J. (2011) — cluster bootstrap for clustered/hierarchical data.
+11. Brier, G. W. (1950). *Verification of forecasts expressed in terms of probability.* Monthly Weather Review 78(1).
+12. Guo, C., Pleiss, G., Sun, Y. & Weinberger, K. Q. (2017). *On calibration of modern neural networks.* ICML.
+13. TypeSafe AI (2026). Jev documentation: Noul questions, confidence, Jev 1.13 jaggedness. https://docs.typesafe.ai
+14. *PEP 758: Allow except and except\* expressions without parentheses.* https://peps.python.org/pep-0758/
 
 ---
 
