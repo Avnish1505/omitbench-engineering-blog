@@ -42,6 +42,9 @@
   --judge:#9AA1B2;      /* LLM judges and grep in charts */
   --base:#D2D6DF;       /* degenerate baselines */
   --shadow:rgba(16,22,48,.28);
+  /* the hero banner stays dark in both themes */
+  --h-bg:#0E1014;--h-sheet:#161920;--h-ink:#E9EBF1;--h-ink2:#C2C7D2;--h-mute:#8E95A5;--h-faint:#5E6575;--h-rule:#2B2F39;
+  --h-pencil:#8FA1FF;--h-add:#5DD59A;--h-add-soft:#12301F;--h-addn:#3E8F66;--h-del:#FF8494;--h-del-soft:#3A1920;
   --serif:"Newsreader",Charter,Georgia,"Times New Roman",serif;
   --ui:"Hanken Grotesk","Helvetica Neue",Arial,sans-serif;
   --mono:"Martian Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -96,26 +99,51 @@ code{font-family:var(--mono);font-stretch:87.5%;font-size:.74em;background:var(-
 .index a[aria-current="true"]{background:var(--pencil-soft)}
 .index a[aria-current="true"] span{color:var(--pencil-text)}
 
-/* hero: the title is a diff */
-.hero{padding-block:clamp(2.75rem,7vw,5.5rem) clamp(2.25rem,5vw,3.75rem)}
-.hunk{display:inline-block;max-width:100%;font-family:var(--mono);font-stretch:87.5%;font-size:.78rem;line-height:1.5;color:var(--pencil-text);background:var(--pencil-soft);padding:.32rem .7rem;border-radius:6px;margin:0 0 1.4rem}
-.diff{margin:0;font-family:var(--mono);font-weight:500;font-stretch:87.5%;font-size:clamp(1.15rem,5.3vw,4.05rem);line-height:1.16;letter-spacing:-.025em;display:grid;gap:.06em;max-width:max-content}
-.dl{display:grid;grid-template-columns:1em minmax(0,1fr);column-gap:.18em;align-items:baseline;padding:.1em .45em .14em .25em;border-radius:.16em;color:var(--ink)}
-.dl .sg{font-weight:400}
-.dl.del{background:var(--del-soft)}.dl.del .sg{color:var(--del)}
-.dl.add{background:var(--add-soft)}.dl.add .sg{color:var(--add)}
-.dl .w{border-radius:.12em;padding:0 .06em;margin:0 -.06em}
-.dl.del .w{background:color-mix(in srgb,var(--del) 24%,transparent);text-decoration:line-through;text-decoration-color:var(--del);text-decoration-thickness:.07em}
-.dl.add .w{background:color-mix(in srgb,var(--add) 26%,transparent)}
+/* hero: the social banner, built live. One missing line, marked with the blue pencil. */
+.hero{padding-block:clamp(1rem,3vw,2rem) clamp(.5rem,2vw,1rem)}
+.banner{position:relative;overflow:hidden;border-radius:20px;color:var(--h-ink);box-shadow:0 0 0 1px var(--rule);
+  background:radial-gradient(560px 440px at 76% 52%,rgba(143,161,255,.16),transparent 70%),radial-gradient(1px 1px at 1px 1px,rgba(255,255,255,.07) 1px,transparent 0) 0 0/24px 24px,var(--h-bg);
+  display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:clamp(1.5rem,3.5vw,3rem);align-items:center;padding:clamp(2rem,5vw,4.25rem) clamp(1.25rem,5vw,4.5rem)}
+.hero-text{min-width:0}
+.hunk{display:inline-block;max-width:100%;font-family:var(--mono);font-stretch:87.5%;font-size:.72rem;line-height:1.5;color:var(--h-pencil);background:rgba(143,161,255,.13);padding:.32rem .7rem;border-radius:6px;margin:0 0 1.4rem}
+.banner h1{margin:0;font-family:var(--serif);font-weight:500;font-size:clamp(2.6rem,5.2vw,4.4rem);line-height:.98;letter-spacing:-.02em;text-wrap:balance}
+.hero-lede{max-width:30rem;font-size:clamp(1.08rem,1.7vw,1.3rem);line-height:1.5;color:var(--h-ink2);margin:1.5rem 0 0}
+.meta{display:flex;flex-wrap:wrap;gap:.35rem 1.4rem;margin:1.5rem 0 0;font-family:var(--ui);font-size:.88rem;color:var(--h-mute)}
+.meta span:first-child{color:var(--h-ink);font-weight:600}
+.stage{perspective:1300px;min-width:0;padding-left:3.4rem}
+.card{position:relative;background:var(--h-sheet);border:1px solid var(--h-rule);border-radius:16px;transform-origin:left center;
+  transform:rotateY(calc(-16deg + var(--ry,0deg))) rotateX(calc(6deg + var(--rx,0deg))) rotateZ(-1.5deg);
+  box-shadow:0 40px 80px -30px rgba(0,0,0,.8);transition:transform .5s cubic-bezier(.3,.7,.2,1)}
+.card .hd{display:flex;justify-content:space-between;gap:1rem;padding:.8rem 1.15rem;border-bottom:1px solid var(--h-rule);font-family:var(--mono);font-stretch:87.5%;font-size:.72rem;color:var(--h-mute);white-space:nowrap}
+.card .hd b{color:var(--h-add);font-weight:500}
+.card .code{padding:.5rem 0 .85rem;font-family:var(--mono);font-stretch:87.5%;font-size:clamp(.66rem,1.1vw,.82rem);line-height:2.1;color:var(--h-ink2)}
+.card .l{position:relative;display:grid;grid-template-columns:2.7rem minmax(0,1fr);white-space:pre}
+.card .t{overflow:hidden;text-overflow:ellipsis}
+.card .n{color:var(--h-faint);text-align:right;padding-right:.85rem}
+.card .a{background:var(--h-add-soft);color:var(--h-ink)}
+.card .a .n{color:var(--h-addn)}
+.card .gap{color:var(--h-del);background:repeating-linear-gradient(135deg,var(--h-del-soft) 0 7px,transparent 7px 14px);box-shadow:inset 0 1px 0 rgba(255,132,148,.35),inset 0 -1px 0 rgba(255,132,148,.35)}
+.card .gap .n{color:var(--h-del)}
+.card .mute{color:var(--h-faint)}
+.caret{position:absolute;left:-3.5rem;top:-.7rem;width:3.3rem;height:3.3rem}
+.caret path{fill:none;stroke:var(--h-pencil);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.note{position:absolute;right:-1.4rem;top:3.45rem;font-family:var(--ui);font-size:.88rem;font-weight:600;line-height:1.2;color:var(--h-bg);background:var(--h-pencil);padding:.4rem .85rem;border-radius:999px;white-space:nowrap;transform:rotate(3deg)}
 @media (prefers-reduced-motion:no-preference){
-  .dl.del .w{animation:mark .45s .25s ease-out both}
-  .dl.add{animation:wipe .8s .6s cubic-bezier(.3,.7,.2,1) both}
-  .dl.add .w{animation:mark .45s 1.3s ease-out both}
-  @keyframes wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
-  @keyframes mark{from{background-color:transparent;text-decoration-color:transparent}}
+  .card .l{animation:lin .4s cubic-bezier(.3,.7,.2,1) both;animation-delay:calc(var(--i) * 60ms + 200ms)}
+  .caret path{stroke-dasharray:80;animation:draw .5s 1.05s ease-out both}
+  .note{animation:pop .45s 1.35s cubic-bezier(.3,.7,.2,1.3) both}
+  @keyframes lin{from{opacity:0;transform:translateX(-8px)}}
+  @keyframes draw{from{stroke-dashoffset:80}to{stroke-dashoffset:0}}
+  @keyframes pop{from{opacity:0;transform:rotate(3deg) translateY(6px) scale(.9)}}
 }
-.hero-lede{max-width:35rem;font-size:clamp(1.15rem,1.9vw,1.38rem);line-height:1.5;color:var(--ink-2);margin:1.8rem 0 0}
-.meta{display:flex;flex-wrap:wrap;gap:.35rem 1.6rem;margin:1.3rem 0 0;font-family:var(--ui);font-size:.9rem;color:var(--mute)}
+@media (max-width:900px){
+  .banner{grid-template-columns:minmax(0,1fr)}
+  .stage{padding-left:2.4rem;padding-top:.6rem}
+  .card{transform:rotateY(-7deg) rotateX(4deg) rotateZ(-1deg)}
+  .caret{left:-2.5rem;top:-.4rem;width:2.3rem;height:2.3rem}
+  .card .code{padding-bottom:2.7rem}
+  .note{right:.4rem;top:3.3rem;font-size:.8rem}
+}
 
 /* sections: gutter + body */
 .sec{display:grid;grid-template-columns:8.5rem minmax(0,1fr);column-gap:clamp(1.5rem,3vw,2.75rem)}
@@ -471,13 +499,30 @@ footer.site nav{display:flex;flex-wrap:wrap;gap:.5rem 1.4rem}
 </header>
 
 <header class="hero wrap" id="top">
-  <p class="hunk">@@ -1 +1 @@ Benchmarking silent omissions in AI-agent code patches</p>
-  <h1 class="diff" aria-label="The detector that lost">
-    <span class="dl del" aria-hidden="true"><span class="sg">−</span><span>The detector that <span class="w">won</span></span></span>
-    <span class="dl add" aria-hidden="true"><span class="sg">+</span><span>The detector that <span class="w">lost</span></span></span>
-  </h1>
-  <p class="hero-lede">My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
-  <p class="meta"><span>Avnish Singh</span><span>Updated 23 Sep 2026</span><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span></p>
+  <div class="banner">
+    <div class="hero-text">
+      <p class="hunk">@@ -1 +1 @@ Benchmarking silent omissions in AI-agent code patches</p>
+      <h1>The detector that lost.</h1>
+      <p class="hero-lede">My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
+      <p class="meta"><span>Avnish Singh</span><span>Updated 23 Sep 2026</span><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span></p>
+    </div>
+    <div class="stage">
+      <div class="card" role="img" aria-label="Illustration: a diff of client.py where lines 12 to 17 are added and every test passes, but line 19, redact_auth_header, was never written even though the pull request said it was done.">
+        <div class="hd"><span>client.py</span><span><b>+5</b>&nbsp;&nbsp;tests: 14 passed</span></div>
+        <div class="code">
+<div class="l a" style="--i:0"><span class="n">12</span><span class="t">+def parse_retry_after(value):</span></div>
+<div class="l a" style="--i:1"><span class="n">13</span><span class="t">+    return int(value) if ...</span></div>
+<div class="l " style="--i:2"><span class="n">14</span><span class="t"> </span></div>
+<div class="l a" style="--i:3"><span class="n">15</span><span class="t">+class RetryPolicy:</span></div>
+<div class="l a" style="--i:4"><span class="n">16</span><span class="t">+    def backoff(self, attempt):</span></div>
+<div class="l a" style="--i:5"><span class="n">17</span><span class="t">+        return min(2 ** attempt, 30)</span></div>
+<div class="l " style="--i:6"><span class="n">18</span><span class="t"> </span></div>
+<div class="l gap" style="--i:7"><span class="n">19</span><span class="t"> redact_auth_header  never written</span><svg class="caret" viewBox="0 0 56 56" aria-hidden="true"><path d="M10 44 L28 12 L46 44"/></svg><span class="note">the PR said this was done</span></div>
+<div class="l" style="--i:8"><span class="n">20</span><span class="t"><span class="mute">  # no test covered it</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </header>
 
 <main class="wrap" id="prose">
@@ -1105,6 +1150,14 @@ $('#theme').addEventListener('click',()=>{
   const next=dark?'light':'dark';root.setAttribute('data-theme',next);
   try{localStorage.setItem('ob-theme',next)}catch(e){}
 });
+
+/* hero card follows the pointer a little */
+(function(){const st=$('.stage'),cd=$('.card');
+ if(!st||!matchMedia('(pointer: fine)').matches||matchMedia('(prefers-reduced-motion: reduce)').matches||innerWidth<=900)return;
+ st.addEventListener('pointermove',e=>{const r=st.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;
+  cd.style.setProperty('--ry',(x*9).toFixed(2)+'deg');cd.style.setProperty('--rx',(-y*7).toFixed(2)+'deg')});
+ st.addEventListener('pointerleave',()=>{cd.style.setProperty('--ry','0deg');cd.style.setProperty('--rx','0deg')});
+})();
 
 /* reading time */
 const words=($('#prose').textContent||'').trim().split(/\s+/).length;
