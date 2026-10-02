@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The detector that lost: building OmitBench</title>
 <meta name="description" content="A benchmark for silent omissions in AI-agent code patches, and the measurements that didn't flatter it.">
-<meta name="theme-color" content="#FAF9F5">
+<meta name="author" content="Avnish Singh">
+<meta name="theme-color" content="#F3F4F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1014" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="article">
 <meta property="og:title" content="The detector that lost: building OmitBench">
 <meta property="og:description" content="My deterministic detector lost to an LLM judge, and removing one assumption drove it to MCC −0.935. Both numbers are the headline.">
@@ -15,476 +17,512 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://avnish1505.github.io/omitbench-engineering-blog/assets/og-banner.png">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='2' width='20' height='20' rx='6' fill='%23141413'/%3E%3Cpath d='M7 12h10' stroke='%23D97757' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='1.5' y='1.5' width='21' height='21' rx='6' fill='%232C47D4'/%3E%3Cpath d='M7.5 15.5L12 8l4.5 7.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Martian+Mono:wdth,wght@75..112.5,400..600&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap" rel="stylesheet">
+<script>try{var t=localStorage.getItem('ob-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <style>
+/* Layout: one left-aligned reading column beside a diff-style gutter that names each section's kind; figures break out to the right. */
 :root{
-  --ivory:#FAF9F5;--oat:#F0EEE6;--cloud:#E3DACC;--line:#DEDAD0;
-  --ink:#141413;--ink-2:#3D3D3A;--muted:#5E5D59;--faint:#8A877D;
-  --clay:#D97757;--clay-deep:#B5563B;--clay-soft:#F4DCCF;--clay-text:#8E3F29;
-  --sky:#6A9BCC;--sky-soft:#E4ECF4;--sky-text:#3F6E99;
-  --olive:#788C5D;--olive-soft:#E3E9D9;--olive-text:#4A5A36;
-  --base:#CFCABD;
-  --serif:"Source Serif 4","Iowan Old Style",Georgia,serif;
-  --sans:"Instrument Sans","Helvetica Neue",Arial,sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-  --measure:700px;
+  --paper:#F3F4F7;      /* page ground, cool grey biased toward the accent */
+  --sheet:#FFFFFF;      /* figure and panel surfaces */
+  --ink:#14161C;
+  --ink-2:#3A3F4B;
+  --mute:#5D6474;
+  --faint:#868D9D;
+  --rule:#D8DBE3;
+  --rule-2:#E8EAF0;
+  --pencil:#2C47D4;     /* the editor's blue pencil: the only accent, marks what's missing */
+  --pencil-soft:#E3E8FC;
+  --pencil-text:#2139B2;
+  --del:#B4233A;  --del-soft:#FBE3E6;
+  --add:#16714A;  --add-soft:#DCF2E5;
+  --warn:#94600A; --warn-soft:#FAEFD7;
+  --judge:#9AA1B2;      /* LLM judges and grep in charts */
+  --base:#D2D6DF;       /* degenerate baselines */
+  --shadow:rgba(16,22,48,.28);
+  --serif:"Newsreader",Charter,Georgia,"Times New Roman",serif;
+  --ui:"Hanken Grotesk","Helvetica Neue",Arial,sans-serif;
+  --mono:"Martian Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
 }
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1014;--sheet:#161920;--ink:#E9EBF1;--ink-2:#C2C7D2;--mute:#9BA2B1;--faint:#6F7687;--rule:#2B2F39;--rule-2:#21252D;
+  --pencil:#8FA1FF;--pencil-soft:#1D2343;--pencil-text:#B0BDFF;
+  --del:#FF8494;--del-soft:#3A1920;--add:#5DD59A;--add-soft:#12301F;--warn:#F0B24C;--warn-soft:#33270F;
+  --judge:#6B7386;--base:#363B47;--shadow:rgba(0,0,0,.55);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#0E1014;--sheet:#161920;--ink:#E9EBF1;--ink-2:#C2C7D2;--mute:#9BA2B1;--faint:#6F7687;--rule:#2B2F39;--rule-2:#21252D;
+  --pencil:#8FA1FF;--pencil-soft:#1D2343;--pencil-text:#B0BDFF;
+  --del:#FF8494;--del-soft:#3A1920;--add:#5DD59A;--add-soft:#12301F;--warn:#F0B24C;--warn-soft:#33270F;
+  --judge:#6B7386;--base:#363B47;--shadow:rgba(0,0,0,.55);color-scheme:dark}
+
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html{scroll-behavior:smooth;scroll-padding-top:88px;-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--ivory);color:var(--ink);font-family:var(--serif);font-size:19px;line-height:1.72;font-optical-sizing:auto;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
-::selection{background:var(--clay-soft)}
-a{color:var(--clay-deep);text-decoration-thickness:1px;text-underline-offset:3px}
+html{scroll-behavior:smooth;scroll-padding-top:5rem;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:1.1875rem;line-height:1.68;font-optical-sizing:auto;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--pencil-soft)}
+a{color:var(--pencil-text);text-decoration-thickness:1px;text-underline-offset:.18em}
 a:hover{color:var(--ink)}
-:focus-visible{outline:2px solid var(--clay);outline-offset:3px;border-radius:4px}
+:focus-visible{outline:2px solid var(--pencil);outline-offset:3px;border-radius:4px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+code{font-family:var(--mono);font-stretch:87.5%;font-size:.74em;background:var(--rule-2);padding:.1em .34em;border-radius:4px}
+.wrap{max-width:74rem;margin:0 auto;padding-inline:clamp(1rem,4vw,2.5rem)}
 
-/* progress + top bar */
-.progress{position:fixed;inset:0 0 auto 0;height:3px;z-index:60;pointer-events:none}
-.progress span{display:block;height:100%;background:var(--clay);transform:scaleX(0);transform-origin:left}
-.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem clamp(1rem,4vw,2.5rem);background:rgba(250,249,245,.88);backdrop-filter:saturate(1.2) blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid transparent;transition:border-color .2s;font-family:var(--sans);font-size:.92rem}
-.topbar.is-scrolled{border-bottom-color:var(--line)}
-.brand{display:flex;align-items:center;gap:.6rem;color:var(--ink);text-decoration:none;font-weight:600}
+/* top bar */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:40;background:color-mix(in srgb,var(--paper) 86%,transparent);backdrop-filter:saturate(1.2) blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
+.bar-in{position:relative;display:flex;align-items:center;gap:.9rem;height:3.25rem;font-family:var(--ui);font-size:.9rem;line-height:1.2}
+.brand{display:flex;align-items:center;gap:.55rem;color:var(--ink);text-decoration:none;font-weight:700;white-space:nowrap}
+.brand span{font-weight:400;color:var(--mute)}
 .brand svg{width:22px;height:22px;flex:none}
-.repo{color:var(--ink);text-decoration:none;padding:.45rem .9rem;border:1px solid var(--line);border-radius:999px;background:#fff;white-space:nowrap}
-.repo:hover{border-color:var(--ink);color:var(--ink)}
+.mk-bg{fill:var(--pencil)}.mk-c{stroke:var(--sheet)}
+.now{flex:1;min-width:0;padding-left:.9rem;margin-left:.1rem;border-left:1px solid var(--rule);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now:empty{border-left-color:transparent}
+.now b{color:var(--pencil-text);font-weight:600;margin-right:.45rem}
+.bar-btn{font:inherit;font-size:.86rem;color:var(--ink);background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:.36rem .7rem;cursor:pointer;text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:.4rem}
+.bar-btn:hover{border-color:var(--ink);color:var(--ink)}
+.bar-btn svg{width:15px;height:15px;flex:none}
+.icon-btn{padding:.36rem .45rem}
+.prog{position:absolute;left:0;right:0;bottom:-1px;height:2px;transform-origin:left;transform:scaleX(0);background:var(--pencil)}
+@media (max-width:760px){.now{display:none}.brand{flex:1}.brand span,.gh-txt{display:none}}
 
-/* hero */
-.hero{border-bottom:1px solid var(--line);background:linear-gradient(var(--ivory),var(--oat))}
-.hero-inner{max-width:1180px;margin:0 auto;padding:clamp(2.5rem,7vw,5rem) clamp(1.25rem,4vw,2.5rem) clamp(2.5rem,5vw,4rem);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(2rem,5vw,4rem);align-items:center}
-.hero-kicker{font-family:var(--sans);color:var(--clay-deep);font-size:1rem;margin:0 0 1.1rem}
-.hero-title{font-family:var(--sans);font-weight:600;font-size:clamp(2.3rem,4.6vw,3.7rem);line-height:1.04;letter-spacing:-.03em;margin:0 0 1.3rem;text-wrap:balance}
-.hero-title s{color:var(--faint);text-decoration-color:var(--clay);text-decoration-thickness:.08em;font-weight:500}
-.hero-lede{font-size:1.2rem;line-height:1.55;color:var(--ink-2);margin:0;max-width:34em}
-.hero-meta{font-family:var(--sans);color:var(--muted);font-size:.93rem;margin:1.6rem 0 0;display:flex;flex-wrap:wrap;gap:.5rem 1.25rem}
-.hero-meta span{display:inline-flex;align-items:center;gap:.45rem}
-.hero-meta span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--olive)}
-.hero-art{margin:0}
-.hero-art svg{width:100%;height:auto;display:block}
+.index{position:absolute;top:calc(100% + .5rem);right:0;width:min(25rem,calc(100vw - 2rem));max-height:min(72vh,38rem);overflow:auto;background:var(--sheet);border:1px solid var(--rule);border-radius:12px;box-shadow:0 22px 48px -20px var(--shadow);padding:.4rem}
+.index ol{list-style:none;margin:0;padding:0}
+.index a{display:grid;grid-template-columns:6rem minmax(0,1fr);gap:.8rem;padding:.5rem .65rem;border-radius:8px;color:var(--ink);text-decoration:none;font-size:.92rem;line-height:1.35}
+.index a span{color:var(--faint);font-size:.82rem;padding-top:.06rem}
+.index a:hover{background:var(--rule-2)}
+.index a[aria-current="true"]{background:var(--pencil-soft)}
+.index a[aria-current="true"] span{color:var(--pencil-text)}
+
+/* hero: the title is a diff */
+.hero{padding-block:clamp(2.75rem,7vw,5.5rem) clamp(2.25rem,5vw,3.75rem)}
+.hunk{display:inline-block;max-width:100%;font-family:var(--mono);font-stretch:87.5%;font-size:.78rem;line-height:1.5;color:var(--pencil-text);background:var(--pencil-soft);padding:.32rem .7rem;border-radius:6px;margin:0 0 1.4rem}
+.diff{margin:0;font-family:var(--mono);font-weight:500;font-stretch:87.5%;font-size:clamp(1.15rem,5.3vw,4.05rem);line-height:1.16;letter-spacing:-.025em;display:grid;gap:.06em;max-width:max-content}
+.dl{display:grid;grid-template-columns:1em minmax(0,1fr);column-gap:.18em;align-items:baseline;padding:.1em .45em .14em .25em;border-radius:.16em;color:var(--ink)}
+.dl .sg{font-weight:400}
+.dl.del{background:var(--del-soft)}.dl.del .sg{color:var(--del)}
+.dl.add{background:var(--add-soft)}.dl.add .sg{color:var(--add)}
+.dl .w{border-radius:.12em;padding:0 .06em;margin:0 -.06em}
+.dl.del .w{background:color-mix(in srgb,var(--del) 24%,transparent);text-decoration:line-through;text-decoration-color:var(--del);text-decoration-thickness:.07em}
+.dl.add .w{background:color-mix(in srgb,var(--add) 26%,transparent)}
 @media (prefers-reduced-motion:no-preference){
-  .hero-art .flow{stroke-dashoffset:200;animation:draw 1.4s .35s cubic-bezier(.3,.7,.2,1) both}
-  .hero-art .late{animation-delay:1.1s}
-  .hero-art .pop{animation:pop .5s 1.9s cubic-bezier(.3,.7,.2,1) both}
-  @keyframes draw{from{stroke-dashoffset:200;opacity:0}to{stroke-dashoffset:0;opacity:1}}
-  @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .dl.del .w{animation:mark .45s .25s ease-out both}
+  .dl.add{animation:wipe .8s .6s cubic-bezier(.3,.7,.2,1) both}
+  .dl.add .w{animation:mark .45s 1.3s ease-out both}
+  @keyframes wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  @keyframes mark{from{background-color:transparent;text-decoration-color:transparent}}
 }
+.hero-lede{max-width:35rem;font-size:clamp(1.15rem,1.9vw,1.38rem);line-height:1.5;color:var(--ink-2);margin:1.8rem 0 0}
+.meta{display:flex;flex-wrap:wrap;gap:.35rem 1.6rem;margin:1.3rem 0 0;font-family:var(--ui);font-size:.9rem;color:var(--mute)}
 
-/* shell */
-.shell{max-width:1180px;margin:0 auto;padding:clamp(2.5rem,6vw,4.5rem) clamp(1.25rem,4vw,2.5rem) 5rem;display:grid;grid-template-columns:220px minmax(0,var(--measure));gap:clamp(2.5rem,6vw,5rem);justify-content:center}
-.toc{font-family:var(--sans);font-size:.88rem;line-height:1.4}
-.toc-inner{position:sticky;top:84px;max-height:calc(100vh - 110px);overflow:auto;padding-right:.5rem}
-.toc-title{font-weight:600;margin:0 0 .9rem;color:var(--ink)}
-.toc ul{list-style:none;margin:0;padding:0;border-left:1px solid var(--line)}
-.toc a{display:block;padding:.36rem 0 .36rem 1rem;margin-left:-1px;border-left:2px solid transparent;color:var(--muted);text-decoration:none}
-.toc a:hover{color:var(--ink)}
-.toc a.is-active{color:var(--ink);border-left-color:var(--clay);font-weight:600}
-.toc-toggle{display:none}
+/* sections: gutter + body */
+.sec{display:grid;grid-template-columns:8.5rem minmax(0,1fr);column-gap:clamp(1.5rem,3vw,2.75rem)}
+.gut{border-right:1px solid var(--rule);transition:border-color .25s;padding-top:clamp(2.5rem,5vw,3.75rem)}
+.kind{position:sticky;top:5.25rem;display:block;padding:1.05rem 1.1rem 0 0;text-align:right;font-family:var(--ui);font-size:.86rem;font-weight:600;line-height:1.3;color:var(--faint);transition:color .25s}
+.sec.is-now .gut{border-right-color:var(--pencil)}
+.sec.is-now .kind{color:var(--pencil-text)}
+.body{min-width:0;padding-block:clamp(2.5rem,5vw,3.75rem)}
+.body > *{max-width:40rem}
+.body > .wide{max-width:54rem}
+.body > :first-child{margin-top:0}
+.body > :last-child{margin-bottom:0}
+@media (max-width:880px){
+  .sec{grid-template-columns:minmax(0,1fr)}
+  .gut{border-right:0;padding-top:0}
+  .kind{position:static;text-align:left;padding:2.6rem 0 .45rem}
+  .body{padding-block:0 .6rem}
+  .sec.is-now .kind{color:var(--faint)}
+}
+.body h2{font-family:var(--serif);font-weight:500;font-size:clamp(1.65rem,3vw,2.15rem);line-height:1.16;letter-spacing:-.012em;margin:0 0 1rem;text-wrap:balance}
+.body h3{font-family:var(--serif);font-weight:600;font-size:1.3rem;line-height:1.3;margin:2.2rem 0 .55rem;text-wrap:balance}
+.body p{margin:0 0 1.1rem}
+.body .lede{font-size:1.3rem;line-height:1.5}
+.body strong{font-weight:600}
+.upd{font-family:var(--ui);font-size:.88rem;color:var(--mute)}
 
-/* prose */
-.prose{min-width:0}
-.prose p{margin:0 0 1.3rem}
-.prose h2,.prose h3,.prose h4,.prose h5{font-family:var(--sans);color:var(--ink);letter-spacing:-.015em;text-wrap:balance}
-.prose h2{font-size:clamp(1.65rem,2.6vw,2.1rem);line-height:1.15;font-weight:600;margin:5rem 0 1.4rem;padding-top:2.2rem;border-top:1px solid var(--line);position:relative}
-.prose h2::before{content:"";position:absolute;top:-1px;left:0;width:56px;height:2px;background:var(--clay)}
-.prose h2 .k{display:block;font-size:.9rem;font-weight:500;color:var(--clay-deep);letter-spacing:0;margin-bottom:.35rem}
-.prose section:first-of-type h2{margin-top:0}
-.prose h3{font-size:1.22rem;line-height:1.3;font-weight:600;margin:2.8rem 0 .75rem}
-.prose strong{font-weight:650;color:var(--ink)}
-.prose code{font-family:var(--mono);font-size:.8em;background:var(--oat);border:1px solid #E8E4DA;color:var(--ink-2);padding:.1em .38em;border-radius:6px;word-break:break-word}
-.lede{font-size:1.14em;color:var(--ink-2)}
-section{scroll-margin-top:80px}
+/* checks summary */
+.checks{border:1px solid var(--rule);border-radius:12px;background:var(--sheet);overflow:hidden;font-family:var(--ui);margin-top:1.4rem}
+.checks-head{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem 1.2rem;padding:.85rem 1.15rem;border-bottom:1px solid var(--rule);background:var(--paper);font-size:.88rem;color:var(--ink-2)}
+.checks-head b{color:var(--ink);font-weight:600;margin-right:auto}
+.tally{display:inline-flex;align-items:center;gap:.35rem}
+.ic{width:1.05rem;height:1.05rem;flex:none}
+.c-fail{color:var(--del)}.c-pass{color:var(--add)}.c-warn{color:var(--warn)}
+.ck{list-style:none;margin:0;padding:0}
+.ck li{display:grid;grid-template-columns:1.05rem minmax(0,1fr) auto;column-gap:.8rem;row-gap:.1rem;align-items:baseline;padding:.8rem 1.15rem;border-top:1px solid var(--rule-2)}
+.ck li:first-child{border-top:0}
+.ck .ic{grid-row:1 / 3;align-self:start;margin-top:.22rem}
+.ck a{color:var(--ink);text-decoration:none;font-weight:500;font-size:.98rem;line-height:1.4}
+.ck a:hover{color:var(--pencil-text);text-decoration:underline}
+.ck .v{font-weight:600;font-size:.86rem;white-space:nowrap}
+.ck .ev{grid-column:2 / 4;font-size:.85rem;line-height:1.45;color:var(--mute);font-variant-numeric:tabular-nums}
+.ck li.fail .v,.ck li.fail .ic{color:var(--del)}
+.ck li.pass .v,.ck li.pass .ic{color:var(--add)}
+.ck li.warn .v,.ck li.warn .ic{color:var(--warn)}
+@media (max-width:560px){.ck li{grid-template-columns:1.05rem minmax(0,1fr)}.ck .v{grid-column:2}.ck .ev{grid-column:2}.ck .ic{grid-row:1 / 4}}
 
-/* figures */
-.illus,.panel{margin:2.4rem -1.5rem 2.6rem;padding:clamp(1rem,3vw,1.6rem);background:#fff;border:1px solid var(--line);border-radius:20px;font-family:var(--sans)}
-.illus{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.illus svg{display:block;width:100%;height:auto}
-.prose .cap{margin:.9rem 0 0}
-.cap{font-family:var(--sans);font-size:.86rem;line-height:1.5;color:var(--muted);margin:.9rem 0 0}
+/* panels and figures */
+.fig{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:clamp(1rem,2.4vw,1.5rem);margin:1.6rem 0 1.9rem;font-family:var(--ui);font-size:.92rem;line-height:1.45}
+.fig-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.6rem 1rem;margin-bottom:1.1rem}
+.fig-h h4{margin:0;font-size:1rem;font-weight:600;color:var(--ink)}
+.tag{font-size:.82rem;color:var(--mute)}
+.cap,.body .cap{font-family:var(--ui);font-size:.88rem;line-height:1.5;color:var(--mute);margin:.95rem 0 0}
 .cap b{color:var(--ink);font-weight:600}
-.panel-h{display:flex;justify-content:space-between;align-items:center;gap:.8rem;flex-wrap:wrap;margin-bottom:1.1rem}
-.panel-h h4{margin:0;font-size:1rem;font-weight:600}
-.tag{font-size:.78rem;color:var(--muted);background:var(--oat);border-radius:999px;padding:.2rem .65rem}
+figure.ill{margin:1.8rem 0 2rem}
+.frame{background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:clamp(.75rem,2vw,1.25rem);overflow-x:auto}
+.ill-svg{display:block;width:100%;min-width:620px;height:auto}
+figure.ill figcaption{margin-top:.75rem}
 
-/* short version */
-.short{background:var(--oat);border-radius:20px;padding:1.6rem clamp(1.1rem,3vw,2rem) .8rem;margin:0 -1.5rem 1rem;font-family:var(--sans)}
-.short h2{border:0;padding:0;margin:0 0 .3rem!important;font-size:1.3rem}
-.short h2::before{display:none}
-.short>p{font-size:.92rem;color:var(--muted);margin:0 0 1rem}
-.verdicts{list-style:none;margin:0;padding:0}
-.verdicts li{display:grid;grid-template-columns:minmax(0,1.25fr) 7.2rem minmax(0,1.15fr);gap:1rem;align-items:baseline;padding:.8rem 0;border-top:1px solid var(--cloud);font-size:.92rem;line-height:1.4}
-.verdicts a{color:var(--ink);text-decoration:none;font-weight:600}
-.verdicts a:hover{text-decoration:underline}
-.pill{font-size:.78rem;font-weight:600;border-radius:999px;padding:.12rem .6rem;justify-self:start;white-space:nowrap}
-.pill.no{background:var(--clay-soft);color:var(--clay-text)}
-.pill.yes{background:var(--olive-soft);color:var(--olive-text)}
-.pill.mid{background:var(--sky-soft);color:var(--sky-text)}
-.ev{font-size:.84rem;color:var(--muted)}
+.ill-svg text{font-family:var(--ui);font-size:13.5px;fill:var(--ink)}
+.ill-svg .t-h{font-weight:600}
+.ill-svg .ts{font-size:11.5px}
+.ill-svg .tc{font-family:var(--mono);font-stretch:87.5%;font-size:10.5px}
+.ill-svg .t-m{fill:var(--mute)}
+.ill-svg .t-f{fill:var(--faint)}
+.ill-svg .t-i{fill:var(--paper)}
+.ill-svg .t-ip{fill:color-mix(in srgb,var(--paper) 72%,var(--pencil))}
+.ill-svg .t-del{fill:var(--del)}
+.ill-svg .t-add{fill:var(--add)}
+.ill-svg .t-pen{fill:var(--pencil-text)}
+.ill-svg .t-strike{text-decoration:line-through}
+.ill-svg .b{fill:var(--sheet);stroke:var(--rule);stroke-width:1.2}
+.ill-svg .b-p{fill:var(--paper);stroke:var(--rule);stroke-width:1.2}
+.ill-svg .b-ink{fill:var(--ink)}
+.ill-svg .b-del{fill:var(--del-soft);stroke:var(--del);stroke-width:1.2}
+.ill-svg .b-add{fill:var(--add-soft);stroke:var(--add);stroke-width:1.2}
+.ill-svg .b-pen{fill:var(--pencil-soft);stroke:var(--pencil);stroke-width:1.2}
+.ill-svg .b-warn{fill:var(--warn-soft)}
+.ill-svg .b-ghost{fill:none;stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4}
+.ill-svg .ln{fill:none;stroke:var(--ink-2);stroke-width:1.5}
+.ill-svg .ln-del{fill:none;stroke:var(--del);stroke-width:1.5}
+.ill-svg .ln-f{fill:none;stroke:var(--faint);stroke-width:1.4}
+.ill-svg .dash{stroke-dasharray:5 4}
+.ill-svg .ah{fill:var(--ink-2)}
+.ill-svg .ah-del{fill:var(--del)}
+.ill-svg .f-ink{fill:var(--ink)}
+.ill-svg .f-paper{fill:var(--paper)}
+.ill-svg .s-paper{fill:none;stroke:var(--paper)}
+.ill-svg .f-sheet{fill:var(--sheet)}
+.ill-svg .hatch{fill:url(#hatch)}
+.ill-svg .hatch-ln{stroke:var(--del);stroke-opacity:.35;stroke-width:1.2}
 
-/* segmented */
-.seg{display:inline-flex;flex-wrap:wrap;gap:.25rem;background:var(--oat);padding:.25rem;border-radius:999px}
-.seg button{font:500 .84rem var(--sans);border:0;background:transparent;color:var(--ink-2);padding:.36rem .8rem;border-radius:999px;cursor:pointer;white-space:nowrap}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--ivory)}
-.seg button:hover:not([aria-pressed="true"]){background:#E6E2D6}
-.btn{font:600 .9rem var(--sans);background:var(--ink);color:var(--ivory);border:0;border-radius:999px;padding:.6rem 1.1rem;cursor:pointer;margin-top:1.1rem}
-.btn:hover{background:var(--ink-2)}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border:1px solid var(--rule);border-radius:9px;background:var(--paper)}
+.seg button{font:inherit;font-size:.84rem;border:0;background:transparent;color:var(--ink-2);padding:.32rem .72rem;border-radius:6px;cursor:pointer}
+.seg button:hover{color:var(--ink);background:var(--rule-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.btn{font:inherit;font-size:.9rem;font-weight:600;color:var(--sheet);background:var(--pencil);border:0;border-radius:8px;padding:.6rem 1rem;cursor:pointer;margin-top:1.1rem}
+.btn:hover{background:color-mix(in srgb,var(--pencil) 86%,var(--ink))}
 
-/* PR demo */
-.pr{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
-.box{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--ivory)}
-.box header{font-size:.8rem;color:var(--muted);padding:.5rem .9rem;border-bottom:1px solid var(--line);background:var(--oat)}
-.box-body{padding:.8rem .9rem;font-size:.9rem}
-.box-body h5{margin:0 0 .45rem;font-size:.95rem}
-.claims{list-style:none;margin:.3rem 0 0;padding:0}
-.claims li{display:flex;gap:.5rem;align-items:center;padding:.3rem .45rem;border-radius:8px;transition:background .25s}
-.claims .cb{width:1rem;height:1rem;border-radius:4px;background:var(--ink);color:var(--ivory);font-size:.66rem;display:grid;place-items:center;flex:none}
-.claims .st{margin-left:auto;font-size:.76rem;font-weight:600;opacity:0;transition:opacity .25s}
-.checked .claims li.ok{background:var(--olive-soft)}
-.checked .claims li.ok .st{opacity:1;color:var(--olive-text)}
-.checked .claims li.miss{background:var(--clay-soft)}
-.checked .claims li.miss .st{opacity:1;color:var(--clay-text)}
-.box code{background:none;border:0;padding:0;font-size:.8rem}
-pre.code{margin:0;font-family:var(--mono);font-size:.76rem;line-height:1.7;overflow-x:auto;padding:.55rem 0;background:#fff}
-pre.code span{display:block;padding:0 .9rem;white-space:pre;color:var(--ink-2)}
-pre.code .a{background:var(--olive-soft);color:var(--olive-text)}
-pre.code .c{color:var(--faint)}
-pre.code .gap{background:repeating-linear-gradient(135deg,var(--clay-soft) 0 6px,#fff 6px 12px);color:var(--clay-text)}
+/* code and review boxes */
+.box{border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--sheet);min-width:0}
+.box header{font-size:.8rem;color:var(--mute);padding:.5rem .85rem;border-bottom:1px solid var(--rule);background:var(--paper)}
+.box-body{padding:.8rem .9rem}
+.box-body h5{margin:0;font-size:.98rem;font-weight:600;line-height:1.35}
+pre.code{margin:0;padding:.55rem 0;font-family:var(--mono);font-stretch:87.5%;font-size:.74rem;line-height:1.85;overflow-x:auto;color:var(--ink-2)}
+pre.code span{display:block;padding:0 .9rem;white-space:pre}
+pre.code .a{background:var(--add-soft);color:var(--ink)}
+pre.code .gap{color:var(--del);background:repeating-linear-gradient(135deg,var(--del-soft) 0 5px,transparent 5px 10px)}
+pre.code .gap::before{content:"‸";color:var(--pencil);font-weight:600;margin-right:.3rem}
+.pr{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:.9rem}
+@media (max-width:640px){.pr{grid-template-columns:minmax(0,1fr)}}
+.claims{list-style:none;margin:.65rem 0 0;padding:0;display:grid;gap:.5rem}
+.claims li{display:grid;grid-template-columns:1rem minmax(0,1fr) auto;align-items:center;gap:.55rem;font-size:.88rem}
+.claims .cb{width:1rem;height:1rem;border-radius:4px;background:var(--ink);color:var(--paper);font-size:.66rem;display:grid;place-items:center;line-height:1}
+.claims code{background:none;padding:0;font-size:.74rem}
+.claims .st{font-size:.78rem;color:var(--faint);visibility:hidden}
+#prdemo.checked .claims .st{visibility:visible}
+#prdemo.checked .claims .ok .st{color:var(--add)}
+#prdemo.checked .claims .miss .st{color:var(--del);font-weight:600}
+#prdemo.checked .claims .miss .cb{background:var(--del)}
+#prdemo.checked .claims .miss code{text-decoration:line-through;text-decoration-color:var(--del)}
 
-/* taxonomy */
-.tax{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:1.1rem;align-items:start}
-.tax-read h5{margin:0 0 .3rem;font-size:1.02rem}
-.tax-read p{font-size:.9rem;line-height:1.5;margin:0 0 .7rem;color:var(--ink-2)}
-.verdict{display:inline-block;font-size:.8rem;font-weight:600;padding:.15rem .65rem;border-radius:999px;margin-bottom:.7rem}
-.verdict.hit{background:var(--olive-soft);color:var(--olive-text)}
-.verdict.blind{background:var(--clay-soft);color:var(--clay-text)}
-.score{display:grid;grid-template-columns:auto 1fr auto;gap:.4rem .7rem;align-items:center;font-size:.82rem}
-.score .trk{height:.5rem;background:var(--oat);border-radius:99px;position:relative;overflow:hidden}
-.score .fill{position:absolute;inset:0 auto 0 0;background:var(--ink);border-radius:99px;transition:width .45s cubic-bezier(.4,0,.2,1)}
-.score .fill.j{background:var(--sky)}
-.score b{min-width:2.4rem;text-align:right}
+.tax{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:1.2rem;align-items:start}
+@media (max-width:720px){.tax{grid-template-columns:minmax(0,1fr)}}
+.tax-read h5{margin:0 0 .3rem;font-size:1rem;font-weight:600}
+.tax-read p{margin:0 0 .75rem;color:var(--ink-2)}
+.verdict{display:inline-block;font-size:.8rem;font-weight:600;padding:.22rem .65rem;border-radius:999px}
+.verdict.hit{background:var(--add-soft);color:var(--add)}
+.verdict.blind{background:var(--del-soft);color:var(--del)}
+.score{display:grid;grid-template-columns:auto minmax(0,1fr) 2.6rem;gap:.55rem .7rem;align-items:center;margin-top:1rem;font-size:.84rem}
+.score b{text-align:right;font-variant-numeric:tabular-nums}
+.trk{position:relative;display:block;height:10px;background:var(--rule-2);border-radius:5px}
+.fill{display:block;height:100%;background:var(--pencil);border-radius:inherit;transition:width .5s cubic-bezier(.3,.7,.2,1),left .5s cubic-bezier(.3,.7,.2,1)}
+.fill.j{background:var(--judge)}
 
-/* rules */
-.rules{list-style:none;counter-reset:r;margin:1.6rem 0 1rem;padding:0}
-.rules li{counter-increment:r;display:grid;grid-template-columns:2.4rem 1fr;gap:0 .9rem;padding:1.1rem 0;border-top:1px solid var(--line)}
-.rules li::before{content:counter(r);width:2rem;height:2rem;border-radius:50%;background:var(--ink);color:var(--ivory);display:grid;place-items:center;font:600 .85rem var(--sans);grid-row:span 2}
-.rules h3{margin:.15rem 0 .3rem;font-size:1.05rem}
-.rules p{margin:0;font-size:.97rem}
-
-/* bars */
-.bars{display:grid;grid-template-columns:minmax(7rem,11rem) 1fr 3.4rem;gap:.55rem .85rem;align-items:center}
-.bars .lab{font-size:.86rem;line-height:1.25;color:var(--ink)}
-.bars .lab small{display:block;color:var(--faint);font-size:.74rem}
-.bars .trk{position:relative;height:1.4rem;background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),#EFECE4 calc(25% - 1px) 25%)}
-.bars .bar{position:absolute;left:0;top:.28rem;bottom:.28rem;background:var(--sky);border-radius:0 6px 6px 0;transition:width .55s cubic-bezier(.4,0,.2,1)}
-.bars .bar.ours{background:var(--ink)}
+/* bar charts */
+.bars,.axis{display:grid;grid-template-columns:minmax(6rem,11rem) minmax(0,1fr) 3.5rem;column-gap:.9rem}
+.bars{row-gap:.6rem;align-items:center}
+.bars .lab{font-size:.88rem;color:var(--ink);line-height:1.25}
+.bars .lab small{display:block;color:var(--faint);font-size:.76rem}
+.bars .trk{height:16px;border-radius:4px}
+.bars .bar{position:absolute;left:0;top:0;bottom:0;background:var(--judge);border-radius:4px;transition:width .5s cubic-bezier(.3,.7,.2,1)}
+.bars .bar.ours{background:var(--pencil)}
 .bars .bar.base{background:var(--base)}
-.bars .bar.olive{background:var(--olive)}
-.bars .ci{position:absolute;top:50%;height:1.5px;background:var(--ink-2);transition:left .55s,width .55s,opacity .3s}
-.bars .ci::before,.bars .ci::after{content:"";position:absolute;top:-.32rem;width:1.5px;height:.64rem;background:var(--ink-2)}
+.bars .ci{position:absolute;top:50%;height:2px;margin-top:-1px;background:var(--ink);transition:left .5s,width .5s,opacity .3s}
+.bars .ci::before,.bars .ci::after{content:"";position:absolute;top:-5px;width:2px;height:12px;background:var(--ink)}
 .bars .ci::before{left:0}.bars .ci::after{right:0}
-.bars .val{font-size:.86rem;font-weight:600;text-align:right}
-.bars .row-flash{animation:flash 1.2s ease}
-@keyframes flash{0%,100%{background-color:transparent}30%{background-color:var(--clay-soft)}}
-.bars .ref{position:absolute;top:-.25rem;bottom:-.25rem;border-left:1.5px dashed var(--clay-deep)}
-.axis{display:grid;grid-template-columns:minmax(7rem,11rem) 1fr 3.4rem;gap:.85rem;margin-top:.35rem;font-size:.72rem;color:var(--faint)}
-.axis div{display:flex;justify-content:space-between}
-.legend{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:.78rem;color:var(--muted);margin-top:.9rem}
-.legend i{display:inline-block;width:.7rem;height:.7rem;border-radius:3px;margin-right:.35rem;vertical-align:-.05rem}
-.note{min-height:3em}
+.bars .val{font-size:.86rem;text-align:right;font-variant-numeric:tabular-nums}
+.bars .ref{position:absolute;top:-5px;bottom:-5px;width:0;border-left:2px dashed var(--ink-2)}
+.axis{margin-top:.45rem;font-size:.76rem;color:var(--faint);font-variant-numeric:tabular-nums}
+.axis > div{display:flex;justify-content:space-between}
+.legend{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-top:1rem;font-size:.82rem;color:var(--mute)}
+.legend i{display:inline-block;width:.75rem;height:.75rem;border-radius:3px;margin-right:.4rem;vertical-align:-.06rem}
+.sw-ours{background:var(--pencil)}.sw-j{background:var(--judge)}.sw-base{background:var(--base)}
+.sw-ring{background:var(--sheet);border:2px solid var(--ink-2);border-radius:50%!important}
+.sw-dot{background:var(--pencil);border-radius:50%!important}
+.sw-diag{height:0!important;border-top:2px dashed var(--faint);border-radius:0!important;vertical-align:.2rem!important}
+.row-flash{animation:flash 1.3s ease-out}
+@keyframes flash{from{background:var(--pencil-soft)}to{background:transparent}}
+@media (prefers-reduced-motion:reduce){.row-flash{animation:none}.fill,.bars .bar,.bars .ci,.mk{transition:none!important}}
 
-/* forest */
-.forest{display:grid;grid-template-columns:minmax(7rem,11rem) 1fr 11rem;gap:.8rem .85rem;align-items:center;font-size:.86rem}
-.forest .trk{position:relative;height:1.8rem}
-.forest .zero{position:absolute;left:50%;top:0;bottom:0;border-left:1px solid var(--faint)}
-.forest .val{white-space:nowrap}
-.forest .ci{position:absolute;top:50%;height:2.5px;margin-top:-1.25px;border-radius:2px}
-.forest .pt{position:absolute;top:50%;width:.8rem;height:.8rem;margin:-.4rem 0 0 -.4rem;border-radius:50%;border:2px solid #fff}
-.forest .pos .ci,.forest .pos .pt{background:var(--olive)}
-.forest .neg .ci,.forest .neg .pt{background:var(--clay)}
-
-/* heat */
-.heat{width:100%;border-collapse:separate;border-spacing:4px;font-size:.88rem}
-.heat th{font-weight:600;color:var(--muted);font-size:.8rem;text-align:left;padding:.2rem .3rem}
-.heat th small{font-weight:400;color:var(--faint)}
-.heat tbody th{color:var(--ink);font-size:.85rem}
-.heat td{text-align:center;padding:.75rem .3rem;border-radius:10px;font-weight:600}
-
-/* deleted */
-.gone{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:1.3rem}
-.gone-card{border:1px dashed #C9C3B5;border-radius:14px;padding:.95rem 1.05rem;background:var(--ivory)}
-.gone-card h5{margin:0;font-size:.98rem;text-decoration:line-through;text-decoration-color:var(--clay);text-decoration-thickness:2px}
-.gone-card .sub{font-size:.8rem;color:var(--clay-deep);margin:.1rem 0 .7rem}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:.15rem .9rem;font-size:.85rem;margin:0}
-.kv dt{color:var(--muted)}.kv dd{margin:0;font-weight:600}
-
-/* real corpus */
-.twin{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
-.big{font-size:2.4rem;font-weight:600;letter-spacing:-.03em;line-height:1;margin:0}
-.big-sub{font-size:.86rem;color:var(--muted);margin:.4rem 0 .8rem;line-height:1.45}
-.dots{display:grid;grid-template-columns:repeat(8,1.55rem);gap:.4rem}
-.dots span{height:1.55rem;border-radius:6px;background:var(--olive-soft);border:1.5px solid var(--olive);display:grid;place-items:center;color:var(--olive-text);font-size:.72rem}
-
-/* extraction stepper */
-.mcc-axis{position:relative;height:4.6rem;margin:1.4rem 2.6rem .4rem}
-.mcc-axis .ln{position:absolute;left:0;right:0;top:2.3rem;height:.55rem;border-radius:99px;background:linear-gradient(90deg,var(--clay-soft),var(--oat) 50%,var(--olive-soft))}
-.mcc-axis .tm{position:absolute;top:2rem;height:1.15rem;border-left:1px solid var(--faint)}
-.mcc-axis .tick{position:absolute;top:3.15rem;font-size:.72rem;color:var(--faint);transform:translateX(-50%);white-space:nowrap}
-.mcc-axis .ghost{position:absolute;top:2.15rem;width:.85rem;height:.85rem;margin-left:-.425rem;border-radius:50%;border:2px solid var(--ink);background:#fff}
-.mcc-axis .mk{position:absolute;top:0;transform:translateX(-50%);transition:left .75s cubic-bezier(.5,0,.2,1);text-align:center;white-space:nowrap}
-.mcc-axis .mk b{display:block;font-size:1.3rem;line-height:1;font-weight:700;letter-spacing:-.02em}
-.mcc-axis .mk i{display:block;width:2.5px;height:1.4rem;margin:.2rem auto 0;background:currentColor;border-radius:2px}
-.tax-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-top:1.4rem}
-.tax-stats div{border-top:1px solid var(--line);padding-top:.6rem}
-.tax-stats .nm{font-size:.8rem;color:var(--muted)}
-.tax-stats .trk{height:.5rem;background:var(--oat);border-radius:99px;margin:.35rem 0;position:relative;overflow:hidden}
-.tax-stats .fill{position:absolute;inset:0 auto 0 0;background:var(--ink);border-radius:99px;transition:width .6s cubic-bezier(.4,0,.2,1)}
-.cm{display:grid;grid-template-columns:repeat(4,1fr);gap:.45rem;margin-top:1rem;font-size:.8rem}
-.cm div{background:var(--oat);border-radius:10px;padding:.55rem .7rem;color:var(--muted)}
-.cm b{display:block;font-size:1.2rem;color:var(--ink)}
-.cm .bad{background:var(--clay-soft)}
-.cm .bad b{color:var(--clay-text)}
-
-/* challenge card */
-.challenge{background:var(--oat);border-radius:18px;padding:1.5rem clamp(1.1rem,3vw,2rem) .6rem;margin:2.2rem -1.5rem}
-.challenge h3{margin:0 0 .3rem}
-.challenge .pre{display:block;font:600 .8rem var(--sans);color:var(--clay-deep);margin-bottom:.25rem}
-.challenge dl{margin:.9rem 0}
-.challenge .row{display:grid;grid-template-columns:118px minmax(0,1fr);gap:1rem;padding:.9rem 0;border-top:1px solid var(--cloud)}
-.challenge dt{font:600 .82rem var(--sans);padding-top:.3rem}
-.challenge dd{margin:0;font-size:.97em}
-.challenge .k1 dt{color:var(--clay-deep)}.challenge .k2 dt{color:var(--ink-2)}.challenge .k3 dt{color:var(--olive-text)}.challenge .k4 dt{color:var(--sky-text)}
-
-/* bot comment */
-.bot{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;margin:1.6rem 0 .6rem;font-family:var(--sans)}
-.bot header{display:flex;gap:.6rem;align-items:center;padding:.6rem .9rem;border-bottom:1px solid var(--line);background:var(--oat);font-size:.84rem;color:var(--muted)}
-.bot .av{width:1.5rem;height:1.5rem;border-radius:50%;background:var(--ink);display:grid;place-items:center}
-.bot .bd{padding:.9rem 1.1rem;font-size:.9rem;line-height:1.5}
-.bot .bd p{margin:0 0 .7rem}
-.bot .miss{font-family:var(--mono);font-size:.8rem;background:var(--clay-soft);color:var(--clay-text);padding:.5rem .75rem;border-radius:8px;margin-bottom:.8rem}
-.bot .warn{border-left:3px solid var(--sky);padding:.1rem 0 .1rem .8rem;color:var(--ink-2);font-size:.86rem}
-.illus-note{font-family:var(--sans);font-size:.78rem;color:var(--faint);font-style:italic;margin:0 0 1.6rem}
-
-/* timeline */
-.seq{list-style:none;margin:1.6rem 0 2rem;padding:0;counter-reset:s;font-family:var(--sans)}
-.seq li{position:relative;padding:0 0 1.35rem 2.8rem;counter-increment:s}
-.seq li::before{content:counter(s);position:absolute;left:0;top:.05rem;width:1.8rem;height:1.8rem;border-radius:50%;background:#fff;border:1.5px solid var(--ink);display:grid;place-items:center;font-size:.8rem;font-weight:600;z-index:1}
-.seq li::after{content:"";position:absolute;left:.87rem;top:1.9rem;bottom:0;border-left:1.5px solid var(--line)}
-.seq li:last-child::after{display:none}
-.seq li.flag::before{background:var(--clay);border-color:var(--clay);color:#fff}
-.seq h4{margin:0 0 .15rem;font-size:1rem}
-.seq p{margin:0;font-size:.92rem;color:var(--ink-2);line-height:1.5}
-.n-bad{color:var(--clay-deep)}.n-good{color:var(--olive-text)}
-
-/* latency */
-.lat .trk{height:1.1rem;background:var(--oat);border-radius:99px;position:relative;overflow:hidden}
-.lat .fill{position:absolute;left:0;top:0;bottom:0;background:var(--ink);min-width:3px}
-.lat .row{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-top:.35rem}
-
-/* open */
-.open{list-style:none;margin:1.4rem 0;padding:0}
-.open li{padding:.9rem 0 .9rem 2rem;border-top:1px solid var(--line);position:relative}
-.open li::before{content:"";position:absolute;left:.15rem;top:1.45rem;width:10px;height:10px;border-radius:50%;border:2px solid var(--sky)}
-.lessons p strong{display:block;font-family:var(--sans);font-weight:600;font-size:1.05rem;margin-bottom:.15rem}
-
-details.table{margin-top:1rem}
-details.table summary{cursor:pointer;color:var(--muted);font-size:.84rem}
-.tw{overflow-x:auto}
-table.data{border-collapse:collapse;width:100%;margin-top:.6rem;font-size:.82rem}
-table.data th{text-align:left;font-weight:600;background:var(--oat);padding:.5rem .7rem;white-space:nowrap}
-table.data td{padding:.45rem .7rem;border-bottom:1px solid #EFECE4;white-space:nowrap}
-.refs{font-size:.9rem;line-height:1.55;padding-left:1.3rem}
-.refs li{margin-bottom:.6rem}
-.refs li::marker{color:var(--clay);font-family:var(--sans);font-weight:600}
-noscript img{width:100%;border-radius:12px;margin-top:1rem}
-
-.site-footer{background:var(--ink);color:#D8D5CC;font-family:var(--sans);font-size:.92rem}
-.site-footer .inner{max-width:1180px;margin:0 auto;padding:3rem clamp(1.25rem,4vw,2.5rem);display:flex;flex-wrap:wrap;justify-content:space-between;gap:1rem}
-.site-footer strong{color:var(--ivory);font-weight:600}
-.site-footer a{color:#EBB9A2}
-
-@media (max-width:1000px){
-  .hero-inner{grid-template-columns:1fr}
-  .hero-art{max-width:520px}
-  .shell{grid-template-columns:minmax(0,1fr);max-width:calc(var(--measure) + 5rem)}
-  .toc{position:sticky;top:57px;z-index:40;margin:0 -1.25rem;background:rgba(250,249,245,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .toc-inner{position:static;max-height:none;padding:0}
-  .toc-title{display:none}
-  .toc-toggle{display:flex;width:100%;justify-content:space-between;align-items:center;font:600 .92rem var(--sans);color:var(--ink);background:none;border:0;padding:.8rem 1.25rem;cursor:pointer}
-  .toc-toggle::after{content:"";width:8px;height:8px;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:rotate(45deg);transition:transform .2s}
-  .toc.is-open .toc-toggle::after{transform:rotate(-135deg)}
-  .toc ul{display:none;max-height:60vh;overflow:auto;margin:0 1.25rem 1rem}
-  .toc.is-open ul{display:block}
-  .illus,.panel,.short,.challenge{margin-left:0;margin-right:0}
-}
+.forest{display:grid;grid-template-columns:minmax(6rem,11rem) minmax(0,1fr) 11rem;gap:.75rem .9rem;align-items:center;font-size:.86rem}
+.forest .trk{height:22px;background:transparent}
+.forest .zero{position:absolute;left:50%;top:-2px;bottom:-2px;border-left:1px dashed var(--faint)}
+.forest .ci{position:absolute;top:50%;height:4px;margin-top:-2px;border-radius:2px;background:var(--faint)}
+.forest .pt{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 2px var(--sheet)}
+.forest .pos .ci,.forest .pos .pt{background:var(--pencil)}
+.forest .neg .ci,.forest .neg .pt{background:var(--del)}
+.forest .val{font-variant-numeric:tabular-nums;color:var(--mute);white-space:nowrap}
+.forest .val b{color:var(--ink);font-weight:600}
+.forest-axis{grid-template-columns:minmax(6rem,11rem) minmax(0,1fr) 11rem}
 @media (max-width:640px){
-  body{font-size:17.5px;line-height:1.68}
-  .repo{display:none}
-  .illus svg{min-width:620px}
-  .illus.hero-fit svg{min-width:0}
-  .verdicts li{grid-template-columns:1fr auto;gap:.3rem .7rem}
-  .verdicts .ev{grid-column:1/-1}
-  .pr,.tax,.gone,.twin{grid-template-columns:1fr}
-  .seg{flex-wrap:nowrap;overflow-x:auto;max-width:100%;border-radius:14px}
-  .bars,.axis{grid-template-columns:6.2rem 1fr 2.9rem;gap:.5rem .55rem}
-  .forest{grid-template-columns:6.2rem 1fr}
-  .forest .val{grid-column:2;margin-top:-.5rem;font-size:.78rem}
-  .tax-stats{grid-template-columns:repeat(3,1fr);gap:.6rem}
-  .cm{grid-template-columns:repeat(2,1fr)}
-  .challenge .row{grid-template-columns:1fr;gap:.2rem}
-  .prose h2{margin-top:3.8rem}
-  .mcc-axis{margin-left:2rem;margin-right:2rem}
+  .forest,.forest-axis{grid-template-columns:minmax(0,1fr)}
+  .forest{row-gap:.2rem}.forest .val{margin-bottom:.7rem}
+  .forest-axis > span:empty{display:none}
+  .bars,.axis{grid-template-columns:minmax(5.2rem,7.5rem) minmax(0,1fr) 3.1rem;column-gap:.65rem}
 }
-@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
-@media print{.topbar,.toc,.progress,.seg,.btn{display:none}.shell{display:block}.illus,.panel{break-inside:avoid}}
 
-/* finding 7 */
-.upd{font-family:var(--sans);font-size:.86rem;color:var(--muted);margin-top:-.6rem}
+.tw{overflow-x:auto}
+table.heat{border-collapse:separate;border-spacing:4px;width:100%;min-width:430px;font-size:.88rem}
+table.heat th{font-weight:500;text-align:left;color:var(--ink-2);padding:.3rem .5rem}
+table.heat thead th{text-align:center;font-size:.82rem;color:var(--mute)}
+table.heat thead th small{display:block;color:var(--faint);font-weight:400}
+table.heat td{text-align:center;padding:.66rem .4rem;border-radius:6px;font-variant-numeric:tabular-nums;font-weight:600}
+table.heat td.zero{color:var(--del);background:repeating-linear-gradient(135deg,var(--del-soft) 0 5px,transparent 5px 10px);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--del) 35%,transparent)}
+table.data{width:100%;min-width:540px;border-collapse:collapse;font-size:.84rem;font-variant-numeric:tabular-nums;margin-top:.7rem}
+table.data th,table.data td{padding:.45rem .6rem;border-bottom:1px solid var(--rule-2);text-align:right;white-space:nowrap}
+table.data th:first-child,table.data td:first-child{text-align:left}
+table.data thead th{color:var(--mute);font-weight:600;border-bottom-color:var(--rule)}
+details.table{margin-top:1rem}
+details.table summary{cursor:pointer;font-size:.86rem;color:var(--pencil-text);font-weight:600;width:max-content;max-width:100%}
+
+.gone{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;margin-bottom:1.3rem}
+@media (max-width:560px){.gone{grid-template-columns:minmax(0,1fr)}}
+.gone-card{border:1px dashed color-mix(in srgb,var(--del) 55%,var(--rule));border-radius:10px;padding:.8rem .95rem}
+.gone-card h5{margin:0;font-size:.95rem;font-weight:600;text-decoration:line-through;text-decoration-color:var(--del);text-decoration-thickness:1.5px}
+.gone-card .sub{margin:.15rem 0 .65rem;font-size:.8rem;color:var(--del);font-weight:600}
+.kv{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem .8rem;margin:0;font-size:.86rem}
+.kv dt{color:var(--mute)}.kv dd{margin:0;font-variant-numeric:tabular-nums;font-weight:600}
+
+.twin{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.6rem}
+@media (max-width:600px){.twin{grid-template-columns:minmax(0,1fr)}}
+.big{font-family:var(--serif);font-size:clamp(2.4rem,5vw,3.2rem);line-height:1;margin:0 0 .45rem;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
+.big-sub{margin:0 0 1rem;color:var(--ink-2)}
+.dots{display:flex;flex-wrap:wrap;gap:5px;max-width:211px}
+.dots span{width:22px;height:22px;border-radius:6px;background:var(--add-soft);color:var(--add);display:grid;place-items:center;font-size:.7rem;font-weight:700}
+
+.mcc-axis{position:relative;height:86px;margin:1.4rem .5rem .5rem}
+.mcc-axis .ln{position:absolute;left:0;right:0;top:54px;height:2px;background:linear-gradient(90deg,var(--del),var(--rule) 50%,var(--add))}
+.mcc-axis .tm{position:absolute;top:48px;width:1px;height:14px;background:var(--faint)}
+.mcc-axis .tick{position:absolute;top:66px;font-size:.76rem;color:var(--faint);white-space:nowrap;transform:translateX(-50%)}
+.mcc-axis .tick.l{transform:none}.mcc-axis .tick.r{transform:translateX(-100%)}
+.mcc-axis .ghost{position:absolute;top:46px;width:14px;height:18px;margin-left:-7px;border:2px dashed var(--faint);border-radius:5px}
+.mk{position:absolute;top:0;transform:translateX(-50%);transition:left .6s cubic-bezier(.3,.7,.2,1);display:flex;flex-direction:column;align-items:center;color:var(--ink-2)}
+.mk.neg{color:var(--del)}.mk.pos{color:var(--add)}
+.mk b{font-size:.84rem;font-weight:700;white-space:nowrap;background:var(--sheet);border:1.5px solid currentColor;border-radius:999px;padding:.12rem .6rem;transition:transform .6s cubic-bezier(.3,.7,.2,1)}
+.mk i{width:2px;height:24px;background:currentColor;margin-top:2px}
+.tax-stats{display:grid;gap:.5rem;margin-top:1.1rem}
+.tax-stats > div{display:grid;grid-template-columns:5.5rem minmax(0,1fr) 3.2rem;gap:.7rem;align-items:center;font-size:.86rem}
+.tax-stats b{text-align:right;font-variant-numeric:tabular-nums}
+.cm{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin-top:1rem}
+@media (max-width:560px){.cm{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cm > div{border:1px solid var(--rule);border-radius:8px;padding:.5rem .65rem;font-size:.8rem;color:var(--mute)}
+.cm b{display:block;font-size:1.3rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.cm .bad{background:var(--del-soft);border-color:transparent;color:var(--del)}
+.cm .bad b{color:var(--del)}
+
+/* lists */
+ol.rules{list-style:none;counter-reset:r;margin:1.6rem 0;padding:0;display:grid;gap:1.15rem}
+ol.rules li{counter-increment:r;display:grid;grid-template-columns:2rem minmax(0,1fr);column-gap:.6rem}
+ol.rules li::before{content:counter(r);grid-row:1 / 3;font-family:var(--serif);font-size:1.55rem;line-height:1.05;color:var(--pencil-text);font-weight:500}
+ol.rules h3{margin:0 0 .2rem;font-size:1.12rem;line-height:1.35}
+ol.rules p{margin:0;color:var(--ink-2);font-size:1.04rem}
+ol.seq{list-style:none;counter-reset:s;margin:1.6rem 0;padding:0}
+ol.seq li{counter-increment:s;position:relative;padding:0 0 1.25rem 2.7rem}
+ol.seq li::before{content:counter(s);position:absolute;left:0;top:.1rem;width:1.75rem;height:1.75rem;border-radius:50%;border:1.5px solid var(--rule);background:var(--paper);display:grid;place-items:center;font-family:var(--ui);font-size:.8rem;font-weight:600;color:var(--ink-2)}
+ol.seq li::after{content:"";position:absolute;left:.84rem;top:2.05rem;bottom:.15rem;width:1.5px;background:var(--rule)}
+ol.seq li:last-child{padding-bottom:0}
+ol.seq li:last-child::after{display:none}
+ol.seq li.flag::before{border-color:var(--del);color:var(--del)}
+ol.seq h4{margin:0 0 .2rem;font-family:var(--ui);font-size:1rem;font-weight:600;line-height:1.4}
+ol.seq p{margin:0;font-size:1.03rem;color:var(--ink-2)}
+.n-bad{color:var(--del)}.n-good{color:var(--add)}
+ul.open{list-style:none;margin:1.1rem 0;padding:0;display:grid;gap:.95rem}
+ul.open li{position:relative;padding-left:1.95rem}
+ul.open li::before{content:"";position:absolute;left:0;top:.42rem;width:1rem;height:1rem;border-radius:50%;border:2px solid var(--add);background:radial-gradient(circle,var(--add) 0 2.3px,transparent 2.8px)}
+ul.notes{list-style:none;margin:1.1rem 0;padding:0;display:grid;gap:.95rem}
+ul.notes li{position:relative;padding-left:1.6rem}
+ul.notes li::before{content:"";position:absolute;left:.2rem;top:.78rem;width:.5rem;height:.5rem;border-top:2px solid var(--pencil);border-left:2px solid var(--pencil);transform:rotate(45deg)}
+.lessons-list{display:grid;gap:1.3rem;margin-top:1.3rem}
+.lessons-list p{margin:0}
+.lessons-list strong{display:block;font-size:1.12rem;margin-bottom:.15rem}
+ol.refs{margin:1rem 0 0;padding-left:1.7rem;font-size:.98rem;line-height:1.55;color:var(--ink-2);display:grid;gap:.5rem}
+ol.refs li::marker{color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* review-thread blocks */
+.challenge{border:1px solid var(--rule);border-radius:12px;background:var(--sheet);padding:1.1rem 1.25rem 1.2rem;margin:1.8rem 0;font-family:var(--ui)}
+.challenge .pre{display:inline-block;font-size:.8rem;font-weight:600;color:var(--pencil-text);background:var(--pencil-soft);border-radius:999px;padding:.15rem .62rem}
+.challenge h3{font-family:var(--serif);margin:.6rem 0 .95rem;font-size:1.25rem}
+.challenge dl{margin:0;display:grid;gap:.8rem}
+.challenge .row{display:grid;grid-template-columns:7.8rem minmax(0,1fr);gap:.8rem;font-size:.95rem;line-height:1.5}
+@media (max-width:560px){.challenge .row{grid-template-columns:minmax(0,1fr);gap:.1rem}}
+.challenge dt{font-weight:600;display:flex;align-items:baseline;gap:.45rem}
+.challenge dt::before{content:"";width:.55rem;height:.55rem;border-radius:50%;background:var(--faint);flex:none}
+.challenge dd{margin:0;color:var(--ink-2)}
+.r-add dt::before{background:var(--add)}.r-del dt::before{background:var(--del)}.r-warn dt::before{background:var(--warn)}
+.bot{border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--sheet);font-family:var(--ui);font-size:.92rem;line-height:1.5;margin:1.6rem 0 .5rem}
+.bot header{display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;background:var(--paper);border-bottom:1px solid var(--rule);color:var(--ink-2);font-size:.86rem}
+.bot header svg{width:20px;height:20px;flex:none}
+.bot .bd{padding:.95rem 1rem}
+.bot .bd p{margin:0 0 .65rem}
+.bot .miss{font-family:var(--mono);font-stretch:87.5%;font-size:.76rem;color:var(--del);background:var(--del-soft);border-radius:6px;padding:.5rem .7rem;margin:0 0 .7rem}
+.bot .warn{color:var(--ink-2);background:var(--warn-soft);border-radius:6px;padding:.55rem .75rem}
+.bot .info{color:var(--ink-2);background:var(--pencil-soft);border-radius:6px;padding:.55rem .75rem;margin:0!important}
+.illus-note{font-family:var(--ui);font-size:.82rem;color:var(--faint)}
+.lat .trk{height:14px}
+.lat .fill{min-width:2px}
+.lat .row{display:flex;justify-content:space-between;gap:1rem;margin-top:.5rem;font-size:.82rem;color:var(--mute);font-variant-numeric:tabular-nums}
+.ci-svg{display:block;width:100%;max-width:40rem;height:auto}
+.ci-svg text{font-family:var(--ui);font-size:12px;fill:var(--mute)}
+.ci-svg .bar-l{stroke:var(--rule)}
+.ci-svg .band{fill:var(--pencil-soft)}
+.ci-svg .bar-v{stroke:var(--del);stroke-width:1.5;stroke-dasharray:4 3}
+.ci-svg .bar-t{fill:var(--del);font-size:13px}
+.ci-svg .pt{fill:var(--ink);stroke:var(--sheet);stroke-width:2}
+.ci-svg .t-f{fill:var(--faint)}
+
 .rel{position:relative}
-.rel svg{display:block;width:100%;height:auto}
-.rel .dot{cursor:pointer}
-.rel .dot:focus{outline:none}
-.rel .dot:focus-visible circle,.rel .dot:hover circle{stroke:#141413;stroke-width:2}
-.rtip{position:absolute;pointer-events:none;background:#141413;color:#FAF9F5;font-size:.78rem;line-height:1.4;padding:.45rem .6rem;border-radius:8px;white-space:nowrap;transform:translate(-50%,-115%);opacity:0;transition:opacity .12s}
+.rel svg{display:block;max-width:100%;height:auto;font-family:var(--ui)}
+.rel .g{stroke:var(--rule-2)}
+.rel .tx{fill:var(--faint);font-size:12px}
+.rel .ax{fill:var(--mute);font-size:12.5px}
+.rel .diag{stroke:var(--faint);stroke-width:2;stroke-dasharray:5 4}
+.rel .ann{fill:var(--ink-2);font-size:12.5px}
+.rel .lead{stroke:var(--faint);stroke-width:1}
+.rel .pl-single,.rel .pl-split{fill:none;stroke-width:2;stroke-linejoin:round;opacity:.5}
+.rel .pl-single{stroke:var(--ink-2)}.rel .pl-split{stroke:var(--pencil)}
+.rel .dt-single{fill:var(--sheet);stroke:var(--ink-2);stroke-width:2}
+.rel .dt-split{fill:var(--pencil);stroke:var(--sheet);stroke-width:2}
+.rel .hit{fill:transparent}
+.rel .dot{cursor:pointer;outline:none}
+.rel .dot:focus-visible .dt-single,.rel .dot:focus-visible .dt-split{stroke:var(--pencil);stroke-width:3}
+.rtip{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 12px));background:var(--ink);color:var(--paper);font-size:.8rem;line-height:1.4;padding:.45rem .65rem;border-radius:8px;pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap}
 .rtip.on{opacity:1}
-.rtip b{font-weight:600}
+
+/* MCC vs F1 playground */
+.play{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.6rem;align-items:start}
+@media (max-width:640px){.play{grid-template-columns:minmax(0,1fr)}}
+.ctl label{display:flex;justify-content:space-between;gap:1rem;font-size:.86rem;color:var(--ink-2)}
+.ctl label + input{margin-bottom:.9rem}
+.ctl output{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+.ctl input[type=range]{width:100%;accent-color:var(--pencil);margin:.45rem 0 0}
+.presets{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.3rem}
+.presets button{font:inherit;font-size:.8rem;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);border-radius:999px;padding:.28rem .72rem;cursor:pointer}
+.presets button:hover{border-color:var(--ink);color:var(--ink)}
+.readout{display:grid;gap:1.05rem}
+.mt{display:grid;grid-template-columns:4.8rem minmax(0,1fr) 3.9rem;gap:.75rem;align-items:center;font-size:.88rem}
+.mt b{text-align:right;font-variant-numeric:tabular-nums;font-size:1.02rem}
+.mt .trk{height:12px}
+.mt .two .zero{position:absolute;left:50%;top:-4px;bottom:-4px;border-left:1px solid var(--faint)}
+.mt .two .fill{position:absolute;top:0}
+.mt .two .fill.neg{background:var(--del)}
+.mt .muted .fill{background:var(--judge)}
+.verdict-line{min-height:2.9em}
+
+footer.site{border-top:1px solid var(--rule);margin-top:clamp(2rem,5vw,3rem);font-family:var(--ui);font-size:.9rem;color:var(--mute)}
+footer.site .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:1rem 2rem;padding-block:2rem 3rem}
+footer.site strong{color:var(--ink);font-weight:600}
+footer.site p{margin:0;max-width:36rem;line-height:1.55}
+footer.site nav{display:flex;flex-wrap:wrap;gap:.5rem 1.4rem}
 </style>
 </head>
 <body>
-<div class="progress" aria-hidden="true"><span></span></div>
 
 <header class="topbar">
-  <a class="brand" href="#top">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="6" fill="#141413"/><path d="M7 9h10M7 12h6" stroke="#FAF9F5" stroke-width="1.8" stroke-linecap="round"/><path d="M7 15.5h7" stroke="#D97757" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2 2.2"/></svg>
-    <span>OmitBench Engineering Blog</span>
-  </a>
-  <a class="repo" href="https://github.com/Avnish1505/Omitbench">View the code</a>
+  <div class="wrap bar-in">
+    <a class="brand" href="#top" aria-label="OmitBench engineering blog, back to top">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="mk-bg" x="1.5" y="1.5" width="21" height="21" rx="6"/><path class="mk-c" d="M7.5 15.5L12 8l4.5 7.5" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      OmitBench <span>engineering blog</span>
+    </a>
+    <p class="now" id="now" aria-live="off"></p>
+    <button class="bar-btn" type="button" id="index-btn" aria-expanded="false" aria-controls="index">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>Contents
+    </button>
+    <a class="bar-btn" href="https://github.com/Avnish1505/Omitbench">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-txt">View the code</span>
+    </a>
+    <button class="bar-btn icon-btn" type="button" id="theme" aria-label="Switch light or dark theme">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor"/></svg>
+    </button>
+    <nav class="index" id="index" aria-label="Contents" hidden><ol id="index-list"></ol></nav>
+    <span class="prog" aria-hidden="true"></span>
+  </div>
 </header>
 
-<section class="hero" id="top">
-  <div class="hero-inner">
-    <div>
-      <p class="hero-kicker">Benchmarking silent omissions in AI-agent code patches</p>
-      <h1 class="hero-title">The detector that <s>won</s> lost</h1>
-      <p class="hero-lede">My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
-      <p class="hero-meta"><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span><span>Avnish Singh</span><span>Updated 23 Sep 2026</span></p>
-    </div>
-    <figure class="hero-art">
-<svg viewBox="0 0 520 440" role="img" aria-label="A task spec asks for three symbols. The agent patch claims all are done but only two exist. A deterministic check asks whether each symbol is defined, finds two present and flags one as omitted.">
-  <defs>
-    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#CFCABD"/></pattern>
-    <marker id="ar-ink" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3D3D3A"/></marker>
-    <marker id="ar-sky" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6A9BCC"/></marker>
-    <marker id="ar-olive" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#788C5D"/></marker>
-    <marker id="ar-clay" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B5563B"/></marker>
-  </defs>
-  <rect width="520" height="440" rx="28" fill="url(#dots)" opacity=".9"/>
-  <g opacity=".5"><circle cx="262" cy="60" r="4" fill="#D97757"/><circle cx="262" cy="60" r="11" fill="none" stroke="#D97757"/><circle cx="36" cy="228" r="3.5" fill="#6A9BCC"/><circle cx="488" cy="244" r="4" fill="#788C5D"/></g>
-  <g font-family="'Instrument Sans','Helvetica Neue',Arial,sans-serif">
-    <rect x="16" y="26" width="206" height="140" rx="14" fill="#fff" stroke="#DEDAD0"/>
-    <text x="34" y="54" font-size="15" font-weight="600" fill="#141413">Task spec</text>
-    <text x="34" y="72" font-size="11.5" fill="#5E5D59">what was asked</text>
-    <g font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" fill="#3D3D3A">
-      <rect x="34" y="89" width="10" height="10" rx="2.5" fill="none" stroke="#3D3D3A"/><text x="52" y="98">parse_retry_after</text>
-      <rect x="34" y="113" width="10" height="10" rx="2.5" fill="none" stroke="#3D3D3A"/><text x="52" y="122">RetryPolicy.backoff</text>
-      <rect x="34" y="137" width="10" height="10" rx="2.5" fill="none" stroke="#3D3D3A"/><text x="52" y="146">redact_auth_header</text>
-    </g>
-    <rect x="298" y="26" width="206" height="140" rx="14" fill="#E4ECF4" stroke="#6A9BCC" stroke-width="1.5" stroke-dasharray="6 5"/>
-    <text x="316" y="54" font-size="15" font-weight="600" fill="#141413">Agent patch</text>
-    <text x="316" y="72" font-size="11.5" fill="#3F6E99">claims: all three done</text>
-    <g font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11">
-      <rect x="314" y="85" width="174" height="20" rx="5" fill="#E3E9D9"/><text x="322" y="99" fill="#4A5A36">+ parse_retry_after</text>
-      <rect x="314" y="109" width="174" height="20" rx="5" fill="#E3E9D9"/><text x="322" y="123" fill="#4A5A36">+ RetryPolicy.backoff</text>
-      <rect x="314" y="133" width="174" height="20" rx="5" fill="#FAF9F5" stroke="#B5563B" stroke-dasharray="4 3"/><text x="322" y="147" fill="#B5563B">  redact_auth_header ?</text>
-    </g>
-    <path class="flow" d="M119 166 C 119 205, 190 210, 214 236" fill="none" stroke="#3D3D3A" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ar-ink)"/>
-    <path class="flow" d="M401 166 C 401 205, 330 210, 306 236" fill="none" stroke="#6A9BCC" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ar-sky)"/>
-    <rect x="150" y="240" width="220" height="94" rx="20" fill="#141413"/>
-    <rect x="160" y="250" width="200" height="74" rx="14" fill="none" stroke="#FAF9F5" stroke-opacity=".14"/>
-    <text x="260" y="270" text-anchor="middle" font-size="12.5" fill="#FAF9F5" opacity=".7">deterministic check</text>
-    <text x="260" y="295" text-anchor="middle" font-size="19" font-weight="600" fill="#FAF9F5">is it defined?</text>
-    <text x="260" y="316" text-anchor="middle" font-size="11" fill="#EBB9A2" font-family="'JetBrains Mono',ui-monospace,monospace">AST walk, offline</text>
-    <path class="flow late" d="M205 334 C 190 360, 150 360, 130 380" fill="none" stroke="#788C5D" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ar-olive)"/>
-    <path class="flow late" d="M315 334 C 330 360, 370 360, 390 380" fill="none" stroke="#B5563B" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ar-clay)"/>
-    <g class="pop">
-      <rect x="44" y="384" width="160" height="44" rx="14" fill="#E3E9D9" stroke="#788C5D" stroke-width="1.5"/>
-      <path d="M66 406 l5 5 l9 -10" stroke="#788C5D" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="90" y="411" font-size="14" font-weight="600" fill="#4A5A36">2 present</text>
-      <rect x="306" y="384" width="180" height="44" rx="14" fill="#F4DCCF" stroke="#B5563B" stroke-width="1.5"/>
-      <path d="M328 396 v22 M328 397 h14 l-3 5 l3 5 h-14" stroke="#B5563B" stroke-width="2" fill="#F4DCCF" stroke-linejoin="round"/>
-      <text x="352" y="411" font-size="14" font-weight="600" fill="#8E3F29">1 omitted, flagged</text>
-    </g>
-  </g>
-</svg>
-    </figure>
-  </div>
-</section>
+<header class="hero wrap" id="top">
+  <p class="hunk">@@ -1 +1 @@ Benchmarking silent omissions in AI-agent code patches</p>
+  <h1 class="diff" aria-label="The detector that lost">
+    <span class="dl del" aria-hidden="true"><span class="sg">−</span><span>The detector that <span class="w">won</span></span></span>
+    <span class="dl add" aria-hidden="true"><span class="sg">+</span><span>The detector that <span class="w">lost</span></span></span>
+  </h1>
+  <p class="hero-lede">My deterministic detector lost to an LLM judge, and removing one convenient assumption drove it below random. Both numbers are the headline.</p>
+  <p class="meta"><span>Avnish Singh</span><span>Updated 23 Sep 2026</span><span id="read-time">15 min read</span><span>310 instances, 8 repositories</span></p>
+</header>
 
-<div class="shell">
-  <nav class="toc" aria-label="Contents">
-    <div class="toc-inner">
-      <button class="toc-toggle" type="button" aria-expanded="false"><span>Contents</span></button>
-      <p class="toc-title">Contents</p>
-      <ul id="toc-list">
-        <li><a href="#short">The short version</a></li>
-        <li><a href="#problem">The failure mode</a></li>
-        <li><a href="#benchmark">What the benchmark contains</a></li>
-        <li><a href="#protocol">The protocol</a></li>
-        <li><a href="#f1">The judge won</a></li>
-        <li><a href="#f2">Blind by construction</a></li>
-        <li><a href="#f3">Detectors I deleted</a></li>
-        <li><a href="#f4">The real corpus</a></li>
-        <li><a href="#f5">The extraction tax</a></li>
-        <li><a href="#bug">The bug sequence</a></li>
-        <li><a href="#ship">Shipping the gate</a></li>
-        <li><a href="#f7">A calibrated model?</a></li>
-        <li><a href="#open">What's still open</a></li>
-        <li><a href="#lessons">Advice</a></li>
-        <li><a href="#refs">References</a></li>
-      </ul>
-    </div>
-  </nav>
+<main class="wrap" id="prose">
 
-  <article class="prose" id="prose">
-
-    <section id="short" class="short">
+  <section class="sec" id="short" data-kind="Summary" data-short="The short version">
+    <div class="gut"><span class="kind">Summary</span></div>
+    <div class="body">
       <h2>The short version</h2>
       <p>Eight questions the project set out to answer, and the answer it actually got. Each row links to the evidence.</p>
-      <ul class="verdicts">
-        <li><a href="#f1">Does a deterministic detector beat LLM judges?</a><span class="pill no">No, not overall</span><span class="ev">Paired ΔMCC vs mid-tier judge −0.202 [−0.252, −0.150]</span></li>
-        <li><a href="#f1">Does it beat naive grep and a reasoning judge?</a><span class="pill yes">Yes</span><span class="ev">+0.128 [+0.103, +0.156] and +0.111 [+0.055, +0.164]</span></li>
-        <li><a href="#f2">Does it generalise past missing symbols?</a><span class="pill no">No</span><span class="ev">0.00 recall on unwired and stubbed code, by construction</span></li>
-        <li><a href="#f4">Do false positive rates transfer to real repos?</a><span class="pill yes">Roughly</span><span class="ev">Real 0.062 against synthetic 0.043</span></li>
-        <li><a href="#f5">Can requirements be extracted from issue text?</a><span class="pill no">No</span><span class="ev">F1 0.066 overall, 0.220 on production symbols</span></li>
-        <li><a href="#f5">What does that cost detection?</a><span class="pill no">Everything</span><span class="ev">MCC +0.499 falls to −0.935</span></li>
-        <li><a href="#ship">Is it deployable?</a><span class="pill mid">Narrowly</span><span class="ev">FPR 0.043, p95 26.5ms, verified live on GitHub</span></li>
-        <li><a href="#f7">Can a model sold as calibrated replace the judge?</a><span class="pill no">No</span><span class="ev">ΔMCC vs mid-tier judge −0.259 [−0.316, −0.203], ECE 0.323</span></li>
-      </ul>
-    </section>
+      <div class="checks wide">
+        <div class="checks-head">
+          <b>8 claims checked against the evidence</b>
+          <span class="tally c-fail"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>5 failed</span>
+          <span class="tally c-pass"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.2 8.2l1.9 1.9 3.7-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>2 passed</span>
+          <span class="tally c-warn"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>1 narrow pass</span>
+        </div>
+        <ul class="ck" id="checks"></ul>
+      </div>
+    </div>
+  </section>
 
-    <section id="problem">
+  <section class="sec" id="problem" data-kind="Context" data-short="The failure mode">
+    <div class="gut"><span class="kind">Context</span></div>
+    <div class="body">
       <h2>The failure mode nobody's CI catches</h2>
       <p class="lede">An AI coding agent opens a pull request. The description says it implemented three things. The diff implements two.</p>
       <p>Nothing crashes. Tests pass, because the missing piece had no test. A reviewer skims a clean-looking diff, reads a confident summary, and merges. The omission surfaces three weeks later as a bug report nobody traces back to that PR.</p>
 
-      <div class="panel" id="prdemo">
-        <div class="panel-h"><h4>Review it yourself</h4><span class="tag">Illustrative, not a corpus instance</span></div>
+      <div class="fig wide" id="prdemo">
+        <div class="fig-h"><h4>Review it yourself</h4><span class="tag">Illustrative, not a corpus instance</span></div>
         <div class="pr">
           <div class="box">
             <header>Pull request description</header>
             <div class="box-body">
               <h5>Add retry handling to the HTTP client</h5>
               <ul class="claims">
-                <li class="ok"><span class="cb">✓</span><code>parse_retry_after</code><span class="st">in diff</span></li>
-                <li class="ok"><span class="cb">✓</span><code>RetryPolicy.backoff</code><span class="st">in diff</span></li>
-                <li class="miss"><span class="cb">✓</span><code>redact_auth_header</code><span class="st">missing</span></li>
+                <li class="ok"><span class="cb" aria-hidden="true">✓</span><code>parse_retry_after</code><span class="st">in diff</span></li>
+                <li class="ok"><span class="cb" aria-hidden="true">✓</span><code>RetryPolicy.backoff</code><span class="st">in diff</span></li>
+                <li class="miss"><span class="cb" aria-hidden="true">✓</span><code>redact_auth_header</code><span class="st">missing</span></li>
               </ul>
             </div>
           </div>
           <div class="box">
             <header>Files changed: client.py</header>
-<pre class="code"><span class="a">+def parse_retry_after(value):</span><span class="a">+    return int(value) if value.isdigit() else 0</span><span class="c"> </span><span class="a">+class RetryPolicy:</span><span class="a">+    def backoff(self, attempt):</span><span class="a">+        return min(2 ** attempt, 30)</span><span class="c"> </span><span class="c">  # tests: 14 passed</span><span class="gap" hidden>  redact_auth_header is never defined</span></pre>
+<pre class="code"><span class="a">+def parse_retry_after(value):</span><span class="a">+    return int(value) if value.isdigit() else 0</span><span class="c"> </span><span class="a">+class RetryPolicy:</span><span class="a">+    def backoff(self, attempt):</span><span class="a">+        return min(2 ** attempt, 30)</span><span class="c"> </span><span class="c">  # tests: 14 passed</span><span class="gap" hidden>redact_auth_header is never defined</span></pre>
           </div>
         </div>
         <button class="btn" type="button" id="prbtn">Check the diff against the description</button>
@@ -495,68 +533,67 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       <p>The most uncomfortable result comes from the false-success literature. In one study, 75.8% of self-assessing coding-agent trajectories that made explicit completion claims were false successes, and no LLM judge configuration tested exceeded AUROC 0.65 at catching it.</p>
       <p>That number is what started this project. If agents fail silently, and the obvious fix of asking another model barely beats a weighted coin, then the question worth asking is whether a boring deterministic rule does better.</p>
       <p>It doesn't. Not overall. That turned out to be the most useful thing I learned.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="benchmark">
+  <section class="sec" id="benchmark" data-kind="Method" data-short="What the benchmark contains">
+    <div class="gut"><span class="kind">Method</span></div>
+    <div class="body">
       <h2>What the benchmark contains</h2>
       <p>310 synthetic instances derived from merged commits across eight mature Python repositories: attrs, click, flask, httpx, itsdangerous, jinja, requests and werkzeug. 13,104 records, 2,184 requirements scored per detector, base rate 27.9% omitted.</p>
 
-      <figure class="illus">
-<svg viewBox="0 0 760 300" role="img" aria-label="Pipeline: a merged commit goes through AST diffing into a list of path and symbol requirements. A mutation removes one requirement as absent, unwired or stub. The gold patch is blocked by a leakage guard, so the detector only sees the task text and the mutated patch.">
+      <figure class="ill wide">
+        <div class="frame">
+<svg class="ill-svg" viewBox="0 0 760 300" role="img" aria-label="Pipeline: a merged commit goes through AST diffing into a list of path and symbol requirements. A mutation removes one requirement as absent, unwired or stub. The gold patch is blocked by a leakage guard, so the detector only sees the task text and the mutated patch.">
   <defs>
-    <pattern id="dots2" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#E3DACC"/></pattern>
-    <marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3D3D3A"/></marker>
-    <marker id="a2c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B5563B"/></marker>
+    <marker id="ma" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="mad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah-del" d="M0 0L10 5L0 10z"/></marker>
   </defs>
-  <rect width="760" height="300" rx="16" fill="url(#dots2)"/>
-  <g font-family="'Instrument Sans','Helvetica Neue',Arial,sans-serif">
-    <rect x="10" y="30" width="136" height="70" rx="12" fill="#fff" stroke="#DEDAD0"/>
-    <text x="24" y="59" font-size="14" font-weight="600" fill="#141413">Merged commit</text>
-    <text x="24" y="80" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">8 real repos</text>
-    <path d="M146 65 H166" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a2)"/>
-    <rect x="170" y="30" width="136" height="70" rx="12" fill="#fff" stroke="#DEDAD0"/>
-    <text x="184" y="59" font-size="14" font-weight="600" fill="#141413">AST diff</text>
-    <text x="184" y="80" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">new_symbols()</text>
-    <path d="M306 65 H326" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a2)"/>
-    <rect x="330" y="30" width="150" height="70" rx="12" fill="#fff" stroke="#DEDAD0"/>
-    <text x="344" y="59" font-size="14" font-weight="600" fill="#141413">Requirements</text>
-    <text x="344" y="80" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">(path, symbol)</text>
-    <path d="M480 65 H500" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a2)"/>
-    <rect x="504" y="30" width="116" height="70" rx="12" fill="#141413"/>
-    <text x="518" y="59" font-size="14" font-weight="600" fill="#FAF9F5">Mutation</text>
-    <text x="518" y="80" font-size="11" fill="#EBB9A2" font-family="'JetBrains Mono',monospace">remove one</text>
-    <path d="M620 55 C 632 55, 632 32, 644 32" fill="none" stroke="#B5563B" stroke-width="1.4" marker-end="url(#a2c)"/>
-    <path d="M620 65 H644" stroke="#B5563B" stroke-width="1.4" marker-end="url(#a2c)"/>
-    <path d="M620 75 C 632 75, 632 98, 644 98" fill="none" stroke="#B5563B" stroke-width="1.4" marker-end="url(#a2c)"/>
-    <g font-size="11.5">
-      <rect x="648" y="18" width="104" height="28" rx="8" fill="#F4DCCF" stroke="#D97757"/><text x="660" y="36" fill="#8E3F29"><tspan font-weight="600">Absent</tspan> n=281</text>
-      <rect x="648" y="51" width="104" height="28" rx="8" fill="#F4DCCF" stroke="#D97757"/><text x="660" y="69" fill="#8E3F29"><tspan font-weight="600">Unwired</tspan> n=19</text>
-      <rect x="648" y="84" width="104" height="28" rx="8" fill="#F4DCCF" stroke="#D97757"/><text x="660" y="102" fill="#8E3F29"><tspan font-weight="600">Stub</tspan> n=309</text>
-    </g>
-    <path d="M700 112 V196" stroke="#3D3D3A" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#a2)"/>
-    <text x="690" y="160" font-size="11" fill="#5E5D59" text-anchor="end">mutated patch</text>
+  <rect class="b" x="10" y="30" width="136" height="70" rx="10"/>
+  <text class="t-h" x="24" y="59">Merged commit</text>
+  <text class="tc t-m" x="24" y="81">8 real repos</text>
+  <path class="ln" d="M146 65H166" marker-end="url(#ma)"/>
+  <rect class="b" x="170" y="30" width="136" height="70" rx="10"/>
+  <text class="t-h" x="184" y="59">AST diff</text>
+  <text class="tc t-m" x="184" y="81">new_symbols()</text>
+  <path class="ln" d="M306 65H326" marker-end="url(#ma)"/>
+  <rect class="b" x="330" y="30" width="150" height="70" rx="10"/>
+  <text class="t-h" x="344" y="59">Requirements</text>
+  <text class="tc t-m" x="344" y="81">(path, symbol)</text>
+  <path class="ln" d="M480 65H500" marker-end="url(#ma)"/>
+  <rect class="b-ink" x="504" y="30" width="116" height="70" rx="10"/>
+  <text class="t-h t-i" x="518" y="59">Mutation</text>
+  <text class="tc t-ip" x="518" y="81">remove one</text>
+  <path class="ln-del" d="M620 55C632 55 632 32 644 32" marker-end="url(#mad)"/>
+  <path class="ln-del" d="M620 65H644" marker-end="url(#mad)"/>
+  <path class="ln-del" d="M620 75C632 75 632 98 644 98" marker-end="url(#mad)"/>
+  <rect class="b-del" x="648" y="18" width="104" height="28" rx="7"/><text class="ts t-del" x="660" y="36"><tspan class="t-h">Absent</tspan> n=281</text>
+  <rect class="b-del" x="648" y="51" width="104" height="28" rx="7"/><text class="ts t-del" x="660" y="69"><tspan class="t-h">Unwired</tspan> n=19</text>
+  <rect class="b-del" x="648" y="84" width="104" height="28" rx="7"/><text class="ts t-del" x="660" y="102"><tspan class="t-h">Stub</tspan> n=309</text>
+  <path class="ln dash" d="M700 112V196" marker-end="url(#ma)"/>
+  <text class="ts t-m" x="690" y="160" text-anchor="end">mutated patch</text>
 
-    <rect x="10" y="200" width="150" height="70" rx="12" fill="#F4DCCF" stroke="#D97757"/>
-    <text x="24" y="229" font-size="14" font-weight="600" fill="#8E3F29">Gold patch</text>
-    <text x="24" y="250" font-size="11" fill="#8E3F29" font-family="'JetBrains Mono',monospace">the answer</text>
-    <path d="M160 235 H262" stroke="#B5563B" stroke-width="1.6" stroke-dasharray="5 4"/>
-    <circle cx="276" cy="235" r="12" fill="#fff" stroke="#B5563B" stroke-width="1.8"/><path d="M268 243 L284 227" stroke="#B5563B" stroke-width="1.8"/>
-    <rect x="296" y="176" width="6" height="108" rx="3" fill="#141413"/>
-    <text x="316" y="200" font-size="12.5" font-weight="600" fill="#141413">Leakage guard</text>
-    <text x="316" y="218" font-size="11" fill="#5E5D59">canary tests fail loudly if</text>
-    <text x="316" y="233" font-size="11" fill="#5E5D59">diff reaches a detector</text>
-    <rect x="470" y="200" width="282" height="70" rx="12" fill="#141413"/>
-    <text x="488" y="229" font-size="14" font-weight="600" fill="#FAF9F5">Detector input</text>
-    <text x="488" y="250" font-size="11" fill="#EBB9A2" font-family="'JetBrains Mono',monospace">task text + mutated patch only</text>
-  </g>
+  <rect class="b-del" x="10" y="200" width="150" height="70" rx="10"/>
+  <text class="t-h t-del" x="24" y="229">Gold patch</text>
+  <text class="tc t-del" x="24" y="251">the answer</text>
+  <path class="ln-del dash" d="M160 235H262"/>
+  <circle class="f-sheet" cx="276" cy="235" r="12"/><circle class="ln-del" cx="276" cy="235" r="12" stroke-width="1.8"/><path class="ln-del" d="M268 243L284 227" stroke-width="1.8"/>
+  <rect class="b-ink" x="296" y="176" width="6" height="108" rx="3"/>
+  <text class="t-h" x="316" y="200" style="font-size:12.5px">Leakage guard</text>
+  <text class="ts t-m" x="316" y="218">canary tests fail loudly if</text>
+  <text class="ts t-m" x="316" y="233">diff reaches a detector</text>
+  <rect class="b-ink" x="470" y="200" width="282" height="70" rx="10"/>
+  <text class="t-h t-i" x="488" y="229">Detector input</text>
+  <text class="tc t-ip" x="488" y="251">task text + mutated patch only</text>
 </svg>
+        </div>
         <figcaption class="cap"><b>Labels come from the gold patch, but the detector never sees it.</b> Each instance removes exactly one requirement in one of three ways.</figcaption>
       </figure>
 
       <p>Pick a mutation class to see what the detector is actually looking at.</p>
 
-      <div class="panel">
-        <div class="panel-h">
+      <div class="fig wide">
+        <div class="fig-h">
           <div class="seg" role="group" aria-label="Omission class" id="taxseg">
             <button type="button" data-k="absent" aria-pressed="true">Absent</button>
             <button type="button" data-k="unwired" aria-pressed="false">Unwired</button>
@@ -574,15 +611,18 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
               <span>Deterministic rule</span><span class="trk"><span class="fill" id="taxp1"></span></span><b id="taxp1v"></b>
               <span>Judge, mistral-medium-3</span><span class="trk"><span class="fill j" id="taxb5"></span></span><b id="taxb5v"></b>
             </div>
-            <p id="taxn" style="margin-top:.8rem"></p>
+            <p id="taxn" style="margin:.85rem 0 0"></p>
           </div>
         </div>
       </div>
 
       <p>The taxonomy is not arbitrary. Published taxonomies of unimplemented requirements split along the same lines, with missing component or feature at 32.4% and incomplete implementation at 18.1%. Absent is the missing component. Stub is the incomplete implementation. Unwired is the sneakiest of the three: the code exists, the symbol resolves, imports succeed, and nothing ever invokes it.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="protocol">
+  <section class="sec" id="protocol" data-kind="Method" data-short="The protocol">
+    <div class="gut"><span class="kind">Method</span></div>
+    <div class="body">
       <h2>The protocol, which mattered more than the code</h2>
       <p>Six rules were frozen before a single number was measured. In hindsight these are the actual contribution. The detector is two hundred lines of AST walking, and the protocol is what makes its numbers mean anything.</p>
       <ol class="rules">
@@ -594,34 +634,66 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li><h3>The pilot snapshot is frozen</h3><p>A week-two results file, never edited, with every later claim expressed as a delta from it.</p></li>
       </ol>
 
-      <figure class="illus">
-<svg viewBox="0 0 760 170" role="img" aria-label="Git history: results/pilot.json is committed once in week two and frozen. Later results are all reported as deltas from it. git log shows exactly one commit ever touched the file.">
-  <defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B5563B"/></marker></defs>
-  <g font-family="'Instrument Sans','Helvetica Neue',Arial,sans-serif">
-    <path d="M620 82 C 530 34, 190 34, 104 80" fill="none" stroke="#B5563B" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#a3)"/>
-    <text x="362" y="22" text-anchor="middle" font-size="12.5" fill="#B5563B">every later claim is a delta from the frozen file</text>
-    <line x1="40" y1="92" x2="720" y2="92" stroke="#3D3D3A" stroke-width="2"/>
-    <circle cx="90" cy="92" r="11" fill="#141413"/>
-    <rect x="84" y="89" width="12" height="9" rx="1.5" fill="#FAF9F5"/><path d="M86.5 89 v-2.5 a3.5 3.5 0 0 1 7 0 V89" fill="none" stroke="#FAF9F5" stroke-width="1.6"/>
-    <text x="90" y="126" text-anchor="middle" font-size="12" fill="#141413" font-family="'JetBrains Mono',monospace">pilot.json</text>
-    <text x="90" y="143" text-anchor="middle" font-size="11.5" fill="#5E5D59">frozen, week 2</text>
-    <g fill="#FAF9F5" stroke="#3D3D3A" stroke-width="2"><circle cx="260" cy="92" r="7"/><circle cx="380" cy="92" r="7"/><circle cx="500" cy="92" r="7"/><circle cx="620" cy="92" r="7"/></g>
-    <g font-size="11.5" fill="#5E5D59" text-anchor="middle">
-      <text x="260" y="124">Finding 1</text><text x="380" y="124">Findings 2 to 4</text><text x="500" y="124">Finding 5</text><text x="620" y="124">CI gate</text>
-    </g>
-    <text x="720" y="162" text-anchor="end" font-size="11" fill="#8A877D" font-family="'JetBrains Mono',monospace">git log: 1 commit ever touched this file</text>
-  </g>
+      <div class="fig wide" id="play">
+        <div class="fig-h"><h4>Try to fool F1, then try to fool MCC</h4><span class="tag">Base rate fixed at 27.9% across 2,184 requirements</span></div>
+        <div class="play">
+          <div class="ctl">
+            <label for="pr">Recall, share of omissions flagged <output id="prv" for="pr"></output></label>
+            <input type="range" id="pr" min="0" max="1" step="0.005" value="1">
+            <label for="pf">False positive rate, implemented code flagged <output id="pfv" for="pf"></output></label>
+            <input type="range" id="pf" min="0" max="1" step="0.001" value="1">
+            <div class="presets" role="group" aria-label="Load a detector's measured recall and false positive rate">
+              <button type="button" data-r="1" data-f="1">Flag everything</button>
+              <button type="button" data-r="0.30" data-f="0.039">Line-grep</button>
+              <button type="button" data-r="0.445" data-f="0.043">Deterministic rule</button>
+              <button type="button" data-r="0.84" data-f="0.113">Judge, mistral-medium-3</button>
+            </div>
+          </div>
+          <div class="readout" aria-live="polite">
+            <div class="mt"><span>F1</span><span class="trk"><span class="fill" id="pf1f"></span></span><b id="pf1"></b></div>
+            <div class="mt"><span>MCC</span><span class="trk two"><span class="zero"></span><span class="fill" id="pmccf"></span></span><b id="pmcc"></b></div>
+            <div class="mt muted"><span>Precision</span><span class="trk"><span class="fill" id="ppf"></span></span><b id="pp"></b></div>
+            <p class="cap verdict-line" id="playnote" style="margin:0"></p>
+          </div>
+        </div>
+        <p class="cap">Presets load each detector's measured recall and false positive rate. The recomputed MCC lands within 0.001 of the measured value, the gap coming from rounded inputs.</p>
+      </div>
+
+      <figure class="ill wide">
+        <div class="frame">
+<svg class="ill-svg" viewBox="0 0 760 170" role="img" aria-label="Git history: results/pilot.json is committed once in week two and frozen. Later results are all reported as deltas from it. git log shows exactly one commit ever touched the file.">
+  <defs><marker id="mb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker></defs>
+  <path class="ln dash" d="M620 82C530 34 190 34 104 80" marker-end="url(#mb)"/>
+  <text class="ts t-m" x="362" y="24" text-anchor="middle" style="font-size:12.5px">every later claim is a delta from the frozen file</text>
+  <line class="ln" x1="40" y1="92" x2="720" y2="92" style="stroke-width:2"/>
+  <circle class="f-ink" cx="90" cy="92" r="12"/>
+  <rect class="f-paper" x="84" y="90" width="12" height="9" rx="1.5"/><path class="s-paper" d="M86.5 90v-2.5a3.5 3.5 0 0 1 7 0V90" stroke-width="1.6"/>
+  <text class="tc" x="90" y="127" text-anchor="middle" style="font-size:11px">pilot.json</text>
+  <text class="ts t-m" x="90" y="145" text-anchor="middle">frozen, week 2</text>
+  <g><circle class="f-sheet" cx="260" cy="92" r="7"/><circle class="ln" cx="260" cy="92" r="7" style="stroke-width:2"/>
+     <circle class="f-sheet" cx="380" cy="92" r="7"/><circle class="ln" cx="380" cy="92" r="7" style="stroke-width:2"/>
+     <circle class="f-sheet" cx="500" cy="92" r="7"/><circle class="ln" cx="500" cy="92" r="7" style="stroke-width:2"/>
+     <circle class="f-sheet" cx="620" cy="92" r="7"/><circle class="ln" cx="620" cy="92" r="7" style="stroke-width:2"/></g>
+  <text class="ts t-m" x="260" y="124" text-anchor="middle">Finding 1</text>
+  <text class="ts t-m" x="380" y="124" text-anchor="middle">Findings 2 to 4</text>
+  <text class="ts t-m" x="500" y="124" text-anchor="middle">Finding 5</text>
+  <text class="ts t-m" x="620" y="124" text-anchor="middle">CI gate</text>
+  <text class="tc t-f" x="720" y="164" text-anchor="end">git log: 1 commit ever touched this file</text>
 </svg>
+        </div>
         <figcaption class="cap"><b>Rule six, verified at project close.</b> Exactly one commit in the repository's history touched the pilot file, and it predates all audited work.</figcaption>
       </figure>
-    </section>
+    </div>
+  </section>
 
-    <section id="f1">
-      <h2><span class="k">Finding 1</span>The result that didn't flatter me</h2>
+  <section class="sec" id="f1" data-kind="Finding 1" data-short="The judge won">
+    <div class="gut"><span class="kind">Finding 1</span></div>
+    <div class="body">
+      <h2>The result that didn't flatter me</h2>
       <p>Six detectors on the same 310 instances. Switch the metric to see why the headline is MCC.</p>
 
-      <div class="panel">
-        <div class="panel-h">
+      <div class="fig wide">
+        <div class="fig-h">
           <h4>A mid-tier judge wins on MCC</h4>
           <div class="seg" role="group" aria-label="Metric" id="metseg">
             <button type="button" data-m="MCC" aria-pressed="true">MCC</button>
@@ -633,39 +705,43 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         </div>
         <div class="bars" id="detbars"></div>
         <div class="axis"><span></span><div><span>0</span><span>0.25</span><span>0.5</span><span>0.75</span><span>1</span></div><span></span></div>
-        <div class="legend"><span><i style="background:#141413"></i>Deterministic rule</span><span><i style="background:#6A9BCC"></i>LLM judges and grep</span><span><i style="background:#CFCABD"></i>Degenerate baselines</span></div>
-        <p class="cap note" id="detnote" aria-live="polite"></p>
+        <div class="legend"><span><i class="sw-ours"></i>Deterministic rule</span><span><i class="sw-j"></i>LLM judges and grep</span><span><i class="sw-base"></i>Degenerate baselines</span></div>
+        <p class="cap" id="detnote" aria-live="polite"></p>
         <details class="table"><summary>Show the full table</summary><div class="tw" id="dettable"></div></details>
-        <noscript><img src="assets/01-detector-mcc.png" alt="MCC by detector with 95% cluster-bootstrap confidence intervals"></noscript>
       </div>
 
-      <div class="panel">
-        <div class="panel-h"><h4>Paired ΔMCC, deterministic rule minus rival</h4><span class="tag">Right of zero, the rule wins</span></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Paired ΔMCC, deterministic rule minus rival</h4><span class="tag">Right of zero, the rule wins</span></div>
         <div class="forest" id="forest"></div>
-        <div class="axis" style="grid-template-columns:minmax(7rem,11rem) 1fr 11rem"><span></span><div><span>−0.3</span><span>0</span><span>+0.3</span></div><span></span></div>
+        <div class="axis forest-axis"><span></span><div><span>−0.3</span><span>0</span><span>+0.3</span></div><span></span></div>
       </div>
 
       <p><strong>The interval against the mid-tier judge excludes zero.</strong> This is not noise. The deterministic wedge I set out to demonstrate does not exist at the overall level.</p>
       <p>That result sits in the first screen of the repository README, not in a limitations appendix. Burying it would have been trivial: report F1 only, where 0.57 against 0.79 reads as a smaller gap, or report independent intervals and note that they overlap somewhat, or quietly drop the judge for being a paid dependency. Rule two exists to stop exactly that.</p>
       <p>What the deterministic rule does win is false positive rate, 0.043 against 0.113. That matters enormously for deployment and becomes the basis of the shipping decision. It is a different claim from "the deterministic approach is better", and conflating the two would have been dishonest.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="f2">
-      <h2><span class="k">Finding 2</span>Blind by construction, not by accident</h2>
-      <div class="panel">
-        <div class="panel-h"><h4>Recall by omission class</h4><span class="tag">Darker catches more</span></div>
+  <section class="sec" id="f2" data-kind="Finding 2" data-short="Blind by construction">
+    <div class="gut"><span class="kind">Finding 2</span></div>
+    <div class="body">
+      <h2>Blind by construction, not by accident</h2>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Recall by omission class</h4><span class="tag">Darker catches more, hatched catches nothing</span></div>
         <div class="tw"><table class="heat" id="heat"></table></div>
-        <noscript><img src="assets/02-recall-by-class.png" alt="Recall by omission class"></noscript>
       </div>
       <p>The detector reaches 0.96 recall on absent symbols and exactly 0.00 on both unwired and stubbed code. This is not a tuning failure. It asks one question, whether this symbol is defined in this file, and a stubbed function is still defined. So is an unwired one. The rule answers its question correctly and the question is insufficient for two of three classes.</p>
       <p>Publishing the per-class breakdown rather than the aggregate is the difference between a benchmark and a marketing number. A clean report means no symbols are entirely missing, not that nothing was omitted. That constraint later became a mandatory disclaimer inside the shipped tool's own output.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="f3">
-      <h2><span class="k">Finding 3</span>Two detectors I built, measured, and deleted</h2>
+  <section class="sec" id="f3" data-kind="Finding 3" data-short="Detectors I deleted">
+    <div class="gut"><span class="kind">Finding 3</span></div>
+    <div class="body">
+      <h2>Two detectors I built, measured, and deleted</h2>
       <p>I also built P2, defined and reachable, and P3, defined, reachable and with a non-trivial body, expecting them to close the blind spots. They did fix recall. P3 reached 0.9868.</p>
-      <div class="panel">
-        <div class="panel-h"><h4>The pre-agreed test: beat grep, or be deleted</h4></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>The pre-agreed test: beat grep, or be deleted</h4></div>
         <div class="gone">
           <div class="gone-card"><h5>P2 defined + reachable</h5><p class="sub">Removed from the registry</p><dl class="kv"><dt>MCC</dt><dd>0.0868</dd><dt>False positive rate</dt><dd>0.83</dd></dl></div>
           <div class="gone-card"><h5>P3 defined + reachable + body</h5><p class="sub">Removed from the registry</p><dl class="kv"><dt>MCC</dt><dd>0.2013</dd><dt>False positive rate</dt><dd>0.84</dd></dl></div>
@@ -676,82 +752,91 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       </div>
       <p>I attempted the fix first, a public-API exemption to suppress false positives, measured it, and found it narrowed the gap without closing it. Both detectors were removed with before-and-after numbers and full reasoning recorded.</p>
       <p>Deleting two thirds of your novel contributions because they lost to <code>grep</code> is not enjoyable. It is what the protocol required, and it makes every surviving claim more credible.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="f4">
-      <h2><span class="k">Finding 4</span>The real-world corpus that couldn't answer the question</h2>
+  <section class="sec" id="f4" data-kind="Finding 4" data-short="The real corpus">
+    <div class="gut"><span class="kind">Finding 4</span></div>
+    <div class="body">
+      <h2>The real-world corpus that couldn't answer the question</h2>
       <p>Synthetic mutations are a controlled instrument, not the world. So I collected eight real agent trajectories from live repositories, tqdm, bandit, marshmallow and mkdocs, with hand-labelled requirements.</p>
-      <div class="panel">
+      <div class="fig wide">
         <div class="twin">
           <div>
             <p class="big">0 of 16</p>
             <p class="big-sub">requirements were omitted. Recall is undefined when the thing you detect never occurs.</p>
-            <div class="dots" aria-label="16 requirements, all implemented"><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span></div>
+            <div class="dots" role="img" aria-label="16 requirements, all implemented"><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span></div>
           </div>
           <div>
             <p class="big">0.062</p>
             <p class="big-sub">real-corpus false positive rate, against 0.043 on synthetic data.</p>
-            <div class="bars" style="grid-template-columns:4.8rem 1fr 2.8rem" id="fprbars"></div>
+            <div class="bars" id="fprbars" style="grid-template-columns:4.8rem minmax(0,1fr) 2.9rem"></div>
           </div>
         </div>
       </div>
       <p>The detector does not start hallucinating omissions once it leaves the synthetic distribution. But the honest framing is that this arm failed to answer its primary question, and the assumptions document says so. Eight instances with zero positives is not a validation. It is a pilot that tells you what to collect more of.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="f5">
-      <h2><span class="k">Finding 5</span>The extraction tax</h2>
+  <section class="sec" id="f5" data-kind="Finding 5" data-short="The extraction tax">
+    <div class="gut"><span class="kind">Finding 5</span></div>
+    <div class="body">
+      <h2>The extraction tax</h2>
       <p class="lede">This is the finding that matters, and it came from asking an uncomfortable question about my own benchmark.</p>
       <p>Every number above depends on a hidden assumption: the requirement list is derived from the gold patch. The detector never sees that patch, but the requirements it checks against were computed from it. That is a perfect-extraction oracle, which makes every result an upper bound.</p>
 
-      <figure class="illus">
-<svg viewBox="0 0 760 320" role="img" aria-label="Two pipelines. Top: gold patch, AST diff, exact requirements, deterministic rule, MCC plus 0.499. Bottom: issue text, LLM extractor, guessed requirements with extraction F1 0.066, the same deterministic rule, MCC minus 0.935. Only the requirement source changes.">
-  <defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3D3D3A"/></marker></defs>
-  <g font-family="'Instrument Sans','Helvetica Neue',Arial,sans-serif">
-    <text x="10" y="22" font-size="13" font-weight="600" fill="#141413">What the benchmark assumed</text>
-    <rect x="10" y="36" width="130" height="66" rx="12" fill="#fff" stroke="#DEDAD0"/><text x="24" y="63" font-size="14" font-weight="600" fill="#141413">Gold patch</text><text x="24" y="84" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">the answer</text>
-    <path d="M140 69 H158" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="162" y="36" width="150" height="66" rx="12" fill="#fff" stroke="#DEDAD0"/><text x="176" y="63" font-size="14" font-weight="600" fill="#141413">AST diff</text><text x="176" y="84" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">exact symbols</text>
-    <path d="M312 69 H330" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="334" y="36" width="150" height="66" rx="12" fill="#fff" stroke="#DEDAD0"/><text x="348" y="63" font-size="14" font-weight="600" fill="#141413">Requirements</text><text x="348" y="84" font-size="11" fill="#4A5A36" font-family="'JetBrains Mono',monospace">right name and path</text>
-    <path d="M484 69 H502" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="506" y="36" width="124" height="66" rx="12" fill="#141413"/><text x="520" y="63" font-size="13.5" font-weight="600" fill="#FAF9F5">Deterministic</text><text x="520" y="82" font-size="13.5" font-weight="600" fill="#FAF9F5">rule</text>
-    <path d="M630 69 H646" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="650" y="36" width="100" height="66" rx="14" fill="#E3E9D9" stroke="#788C5D" stroke-width="1.5"/><text x="700" y="60" text-anchor="middle" font-size="11.5" fill="#4A5A36">MCC</text><text x="700" y="86" text-anchor="middle" font-size="21" font-weight="600" fill="#4A5A36">+0.499</text>
+      <figure class="ill wide">
+        <div class="frame">
+<svg class="ill-svg" viewBox="0 0 760 320" role="img" aria-label="Two pipelines. Top: gold patch, AST diff, exact requirements, deterministic rule, MCC plus 0.499. Bottom: issue text, LLM extractor, guessed requirements with extraction F1 0.066, the same deterministic rule, MCC minus 0.935. Only the requirement source changes.">
+  <defs>
+    <marker id="mc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-ln" x1="0" y1="0" x2="0" y2="8"/></pattern>
+  </defs>
+  <text class="t-h" x="10" y="22" style="font-size:13px">What the benchmark assumed</text>
+  <rect class="b" x="10" y="36" width="130" height="66" rx="10"/><text class="t-h" x="24" y="63">Gold patch</text><text class="tc t-m" x="24" y="85">the answer</text>
+  <path class="ln" d="M140 69H158" marker-end="url(#mc)"/>
+  <rect class="b" x="162" y="36" width="150" height="66" rx="10"/><text class="t-h" x="176" y="63">AST diff</text><text class="tc t-m" x="176" y="85">exact symbols</text>
+  <path class="ln" d="M312 69H330" marker-end="url(#mc)"/>
+  <rect class="b" x="334" y="36" width="150" height="66" rx="10"/><text class="t-h" x="348" y="63">Requirements</text><text class="tc t-add" x="348" y="85">right name and path</text>
+  <path class="ln" d="M484 69H502" marker-end="url(#mc)"/>
+  <rect class="b-ink" x="506" y="36" width="124" height="66" rx="10"/><text class="t-h t-i" x="520" y="63" style="font-size:13.5px">Deterministic</text><text class="t-h t-i" x="520" y="82" style="font-size:13.5px">rule</text>
+  <path class="ln" d="M630 69H646" marker-end="url(#mc)"/>
+  <rect class="b-add" x="650" y="36" width="100" height="66" rx="10"/><text class="ts t-add" x="700" y="60" text-anchor="middle">MCC</text><text class="t-h t-add" x="700" y="87" text-anchor="middle" style="font-size:21px">+0.499</text>
 
-    <line x1="10" y1="152" x2="250" y2="152" stroke="#DEDAD0" stroke-dasharray="4 4"/><line x1="510" y1="152" x2="750" y2="152" stroke="#DEDAD0" stroke-dasharray="4 4"/>
-    <text x="380" y="157" text-anchor="middle" font-size="13" fill="#5E5D59" font-style="italic" font-family="'Source Serif 4',Georgia,serif">only the requirement source changes</text>
+  <line class="ln-f dash" x1="10" y1="152" x2="250" y2="152"/><line class="ln-f dash" x1="510" y1="152" x2="750" y2="152"/>
+  <text class="t-m" x="380" y="157" text-anchor="middle" style="font-family:var(--serif);font-style:italic;font-size:14px">only the requirement source changes</text>
 
-    <text x="10" y="200" font-size="13" font-weight="600" fill="#141413">What deployment actually gets</text>
-    <rect x="10" y="214" width="130" height="66" rx="12" fill="#fff" stroke="#DEDAD0"/><text x="24" y="241" font-size="14" font-weight="600" fill="#141413">Issue text</text><text x="24" y="262" font-size="11" fill="#5E5D59" font-family="'JetBrains Mono',monospace">+ commit message</text>
-    <path d="M140 247 H158" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="162" y="214" width="150" height="66" rx="12" fill="#E4ECF4" stroke="#6A9BCC" stroke-width="1.5" stroke-dasharray="6 5"/><text x="176" y="241" font-size="14" font-weight="600" fill="#141413">LLM extractor</text><text x="176" y="262" font-size="11" fill="#3F6E99" font-family="'JetBrains Mono',monospace">never sees the diff</text>
-    <path d="M312 247 H330" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="334" y="214" width="150" height="66" rx="12" fill="#fff" stroke="#D97757" stroke-dasharray="4 3"/><text x="348" y="241" font-size="14" font-weight="600" fill="#141413">Requirements</text><text x="348" y="262" font-size="11" fill="#8E3F29" font-family="'JetBrains Mono',monospace">extraction F1 0.066</text>
-    <path d="M484 247 H502" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="506" y="214" width="124" height="66" rx="12" fill="#141413"/><text x="520" y="241" font-size="13.5" font-weight="600" fill="#FAF9F5">Deterministic</text><text x="520" y="260" font-size="13.5" font-weight="600" fill="#FAF9F5">rule</text>
-    <path d="M630 247 H646" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a4)"/>
-    <rect x="650" y="214" width="100" height="66" rx="14" fill="#F4DCCF" stroke="#B5563B" stroke-width="1.5"/><text x="700" y="238" text-anchor="middle" font-size="11.5" fill="#8E3F29">MCC</text><text x="700" y="264" text-anchor="middle" font-size="21" font-weight="600" fill="#8E3F29">−0.935</text>
-    <text x="409" y="306" text-anchor="middle" font-size="11" fill="#8E3F29" font-family="'JetBrains Mono',monospace">wrong paths force false alarms: 791 against 38 real catches</text>
-  </g>
+  <text class="t-h" x="10" y="200" style="font-size:13px">What deployment actually gets</text>
+  <rect class="b" x="10" y="214" width="130" height="66" rx="10"/><text class="t-h" x="24" y="241">Issue text</text><text class="tc t-m" x="24" y="263">+ commit message</text>
+  <path class="ln" d="M140 247H158" marker-end="url(#mc)"/>
+  <rect class="b-pen" x="162" y="214" width="150" height="66" rx="10" style="stroke-dasharray:6 5"/><text class="t-h" x="176" y="241">LLM extractor</text><text class="tc t-pen" x="176" y="263">never sees the diff</text>
+  <path class="ln" d="M312 247H330" marker-end="url(#mc)"/>
+  <rect class="f-sheet" x="334" y="214" width="150" height="66" rx="10"/><rect class="hatch" x="334" y="214" width="150" height="66" rx="10"/><rect class="b-ghost" x="334" y="214" width="150" height="66" rx="10" style="stroke:var(--del)"/>
+  <text class="t-h" x="348" y="241">Requirements</text><text class="tc t-del" x="348" y="263">extraction F1 0.066</text>
+  <path class="ln" d="M484 247H502" marker-end="url(#mc)"/>
+  <rect class="b-ink" x="506" y="214" width="124" height="66" rx="10"/><text class="t-h t-i" x="520" y="241" style="font-size:13.5px">Deterministic</text><text class="t-h t-i" x="520" y="260" style="font-size:13.5px">rule</text>
+  <path class="ln" d="M630 247H646" marker-end="url(#mc)"/>
+  <rect class="b-del" x="650" y="214" width="100" height="66" rx="10"/><text class="ts t-del" x="700" y="238" text-anchor="middle">MCC</text><text class="t-h t-del" x="700" y="265" text-anchor="middle" style="font-size:21px">−0.935</text>
+  <text class="tc t-del" x="409" y="308" text-anchor="middle">wrong paths force false alarms: 791 against 38 real catches</text>
 </svg>
+        </div>
         <figcaption class="cap"><b>Same instances, same detector, paired comparison.</b> Paired ΔMCC between the two pipelines is +1.434 [+1.378, +1.488].</figcaption>
       </figure>
 
       <p>In deployment nobody hands you the gold patch. So I built an extractor that reads only the issue and commit text, enforced by its own leakage guard, and emits a structured list of symbols and paths.</p>
       <p>Two decisions were locked before measurement. Matching is purely structural, exact case-sensitive multiset comparison with no model anywhere in the scoring path, because using an LLM to judge LLM-extracted text reintroduces the noise this experiment exists to isolate. And two strictness levels are always reported together: symbol-only and path-qualified. I also wrote down a falsification condition first: if extraction F1 came out above 0.9, the finding would be that the tax is small.</p>
 
-      <div class="panel">
-        <div class="panel-h"><h4>Extraction F1 never comes close to the bar</h4><span class="tag">Dashed line: 0.9 falsification bar</span></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Extraction F1 never comes close to the bar</h4><span class="tag">Dashed line: 0.9 falsification bar</span></div>
         <div class="bars" id="extbars"></div>
         <div class="axis"><span></span><div><span>0</span><span>0.25</span><span>0.5</span><span>0.75</span><span>1</span></div><span></span></div>
-        <div class="legend"><span><i style="background:#141413"></i>Symbol only</span><span><i style="background:#CFCABD"></i>Path qualified</span></div>
-        <noscript><img src="assets/04-extraction-quality.png" alt="Extraction F1 against oracle requirements"></noscript>
+        <div class="legend"><span><i class="sw-ours"></i>Symbol only</span><span><i class="sw-base"></i>Path qualified</span></div>
       </div>
 
       <p>The output was not degenerate: 150 of 310 extractions were non-empty, there were no parse failures, and spot checks showed real inference rather than word-copying. Given a vague commit message the model correctly returned nothing. Given a message that named a symbol, it got the name right and the file wrong. Only two path-qualified hits occurred in the whole corpus, both on commit messages that spelled out a file path.</p>
 
-      <div class="panel" id="taxpanel">
-        <div class="panel-h">
+      <div class="fig wide" id="taxpanel">
+        <div class="fig-h">
           <h4>Walk the tax, one condition at a time</h4>
           <div class="seg" role="group" aria-label="Requirement source" id="condseg">
             <button type="button" data-c="0" aria-pressed="true">Gold patch</button>
@@ -761,23 +846,25 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         </div>
         <div class="mcc-axis" aria-hidden="true">
           <div class="ln"></div>
-          <span class="tm" style="left:0"></span><span class="tick" style="left:0">−1</span>
+          <span class="tm" style="left:0"></span><span class="tick l" style="left:0">−1</span>
           <span class="tm" style="left:50%"></span><span class="tick" style="left:50%">0, no signal</span>
-          <span class="tm" style="left:100%"></span><span class="tick" style="left:100%">+1</span>
+          <span class="tm" style="left:100%"></span><span class="tick r" style="left:100%">+1</span>
           <span class="ghost" style="left:74.95%" title="Gold patch MCC +0.499"></span>
           <div class="mk" id="mccmk"><b id="mccv"></b><i></i></div>
         </div>
         <div class="tax-stats" id="taxstats"></div>
         <div id="taxcm"></div>
-        <p class="cap note" id="condnote" aria-live="polite"></p>
-        <noscript><img src="assets/03-extraction-tax.png" alt="MCC under three requirement-source conditions"></noscript>
+        <p class="cap" id="condnote" aria-live="polite"></p>
       </div>
 
       <p>The middle condition decomposes the failure. Once paths are corrected for symbol-matched items, precision recovers to 0.923, so when the model names the right symbol the verdict is trustworthy. But recall collapses to 0.020. The tax is dominated by the extractor rarely naming the right symbol at all, then compounded by path errors.</p>
       <p>The engineering conclusion is that requirement extraction, not omission detection, is the hard problem. A detector operating on free-text-derived requirements is not merely degraded. It is actively harmful. Total cost of establishing that: $0.057.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="bug">
+  <section class="sec" id="bug" data-kind="Process" data-short="The bug sequence">
+    <div class="gut"><span class="kind">Process</span></div>
+    <div class="body">
       <h2>The bug that would have been p-hacking if I'd stayed quiet</h2>
       <p>A fix that moves your number from −0.898 to +0.006 is exactly the shape of a p-hack. Here is the order things actually happened in.</p>
       <ol class="seq">
@@ -787,99 +874,100 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li><h4>Fixed back to the written definition: <span class="n-good">+0.006</span></h4><p>Only items naming a real oracle symbol are included, as specified in step 1.</p></li>
         <li><h4>Headline row checked, unchanged</h4><p>The shipped-pipeline result, −0.935 with tp 38, fp 791, fn 571, tn 7, is byte-identical across the buggy run, the fixed run and an independent verification run.</p></li>
       </ol>
-      <div class="challenge">
+      <div class="challenge wide">
         <span class="pre">Disclosure</span>
         <h3>Was the fix justified independently of the result?</h3>
         <dl>
-          <div class="row k3"><dt>For</dt><dd>The fix restores the specification rather than inventing one. Scoring non-matching items was always outside the condition's written definition.</dd></div>
-          <div class="row k4"><dt>For</dt><dd>The headline number never moved. The fix touched only the diagnostic.</dd></div>
-          <div class="row k1"><dt>Against</dt><dd>I did not catch it by review. I caught it because −0.898 looked wrong. That ordering is worth stating plainly rather than dressing up.</dd></div>
+          <div class="row r-add"><dt>For</dt><dd>The fix restores the specification rather than inventing one. Scoring non-matching items was always outside the condition's written definition.</dd></div>
+          <div class="row r-add"><dt>For</dt><dd>The headline number never moved. The fix touched only the diagnostic.</dd></div>
+          <div class="row r-del"><dt>Against</dt><dd>I did not catch it by review. I caught it because −0.898 looked wrong. That ordering is worth stating plainly rather than dressing up.</dd></div>
         </dl>
       </div>
       <p>All three points are recorded permanently with both numbers and the full diff. When a fix moves a number in the direction you wanted, publish the sequence, not just the justification. Reviewers can evaluate a justification. Only you know the sequence, so only you can disclose it.</p>
-    </section>
+    </div>
+  </section>
 
-    <section id="ship">
-      <h2><span class="k">Finding 6</span>Shipping a gate that discloses its own uncertainty</h2>
+  <section class="sec" id="ship" data-kind="Finding 6" data-short="Shipping the gate">
+    <div class="gut"><span class="kind">Finding 6</span></div>
+    <div class="body">
+      <h2>Shipping a gate that discloses its own uncertainty</h2>
       <p>The final phase packaged the detector as a GitHub Action that comments on pull requests.</p>
 
-      <figure class="illus">
-<svg viewBox="0 0 760 320" role="img" aria-label="CI gate design. Requirements come from a checklist in the pull request body and go to the deterministic rule running offline in a GitHub Action, which posts a comment with the missing symbol, a blindness disclaimer and the precision interval. Free-text extraction was not built. If a re-run drops precision below 0.80, the gate suspends itself.">
+      <figure class="ill wide">
+        <div class="frame">
+<svg class="ill-svg" viewBox="0 0 760 320" role="img" aria-label="CI gate design. Requirements come from a checklist in the pull request body and go to the deterministic rule running offline in a GitHub Action, which posts a comment with the missing symbol, a blindness disclaimer and the precision interval. Free-text extraction was not built. If a re-run drops precision below 0.80, the gate suspends itself.">
   <defs>
-    <marker id="a5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3D3D3A"/></marker>
-    <marker id="a5c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B5563B"/></marker>
+    <marker id="md" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="mdd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah-del" d="M0 0L10 5L0 10z"/></marker>
   </defs>
-  <g font-family="'Instrument Sans','Helvetica Neue',Arial,sans-serif">
-    <rect x="10" y="10" width="220" height="56" rx="12" fill="none" stroke="#C9C3B5" stroke-dasharray="5 4"/>
-    <text x="26" y="34" font-size="13" font-weight="600" fill="#8A877D" text-decoration="line-through">Free-text extraction</text>
-    <text x="26" y="54" font-size="11" fill="#B5563B" font-family="'JetBrains Mono',monospace">not built: measured −0.935</text>
-    <path d="M230 44 C 262 50, 290 70, 318 98" fill="none" stroke="#C9C3B5" stroke-width="1.5" stroke-dasharray="5 4"/>
-    <circle cx="276" cy="62" r="11" fill="#FAF9F5" stroke="#B5563B" stroke-width="1.8"/><path d="M268 70 L284 54" stroke="#B5563B" stroke-width="1.8"/>
+  <rect class="b-ghost" x="10" y="10" width="220" height="56" rx="10"/>
+  <text class="t-h t-f t-strike" x="26" y="34" style="font-size:13px">Free-text extraction</text>
+  <text class="tc t-del" x="26" y="54">not built: measured −0.935</text>
+  <path class="ln-f dash" d="M230 44C262 50 290 70 318 98"/>
+  <circle class="f-paper" cx="276" cy="62" r="11"/><circle class="ln-del" cx="276" cy="62" r="11" stroke-width="1.8"/><path class="ln-del" d="M268 70L284 54" stroke-width="1.8"/>
 
-    <rect x="10" y="100" width="220" height="112" rx="14" fill="#fff" stroke="#DEDAD0"/>
-    <text x="26" y="126" font-size="13" font-weight="600" fill="#141413">Pull request body</text>
-    <g font-family="'JetBrains Mono',monospace" font-size="11">
-      <text x="26" y="152" fill="#4A5A36">- [x] parse_retry_after</text>
-      <text x="26" y="174" fill="#4A5A36">- [x] RetryPolicy.backoff</text>
-      <text x="26" y="196" fill="#8E3F29">- [ ] redact_auth_header</text>
-    </g>
-    <path d="M230 156 H248" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a5)"/>
-    <rect x="252" y="106" width="200" height="100" rx="18" fill="#141413"/>
-    <text x="352" y="132" text-anchor="middle" font-size="12" fill="#FAF9F5" opacity=".7">GitHub Action</text>
-    <text x="352" y="158" text-anchor="middle" font-size="17" font-weight="600" fill="#FAF9F5">Deterministic rule</text>
-    <text x="352" y="182" text-anchor="middle" font-size="11" fill="#EBB9A2" font-family="'JetBrains Mono',monospace">offline, no API, p95 26.5ms</text>
-    <path d="M452 156 H470" stroke="#3D3D3A" stroke-width="1.6" marker-end="url(#a5)"/>
+  <rect class="b" x="10" y="100" width="220" height="112" rx="12"/>
+  <text class="t-h" x="26" y="126" style="font-size:13px">Pull request body</text>
+  <text class="tc t-add" x="26" y="152">- [x] parse_retry_after</text>
+  <text class="tc t-add" x="26" y="174">- [x] RetryPolicy.backoff</text>
+  <text class="tc t-del" x="26" y="196">- [ ] redact_auth_header</text>
+  <path class="ln" d="M230 156H248" marker-end="url(#md)"/>
+  <rect class="b-ink" x="252" y="106" width="200" height="100" rx="14"/>
+  <text class="ts t-ip" x="352" y="132" text-anchor="middle" style="font-size:12px">GitHub Action</text>
+  <text class="t-h t-i" x="352" y="158" text-anchor="middle" style="font-size:17px">Deterministic rule</text>
+  <text class="tc t-ip" x="352" y="182" text-anchor="middle">offline, no API, p95 26.5ms</text>
+  <path class="ln" d="M452 156H470" marker-end="url(#md)"/>
 
-    <rect x="474" y="72" width="276" height="170" rx="14" fill="#fff" stroke="#DEDAD0"/>
-    <text x="490" y="98" font-size="13" font-weight="600" fill="#141413">PR comment, three parts</text>
-    <rect x="490" y="110" width="244" height="34" rx="8" fill="#F4DCCF"/><text x="502" y="132" font-size="11.5" fill="#8E3F29" font-family="'JetBrains Mono',monospace">missing: redact_auth_header</text>
-    <rect x="490" y="150" width="244" height="34" rx="8" fill="#F0EEE6"/><text x="502" y="172" font-size="11.5" fill="#3D3D3A">blind to unwired and stub code</text>
-    <rect x="490" y="190" width="244" height="34" rx="8" fill="#E4ECF4"/><text x="502" y="212" font-size="11.5" fill="#3F6E99">precision 0.80, CI [0.723, 0.885]</text>
+  <rect class="b" x="474" y="72" width="276" height="170" rx="12"/>
+  <text class="t-h" x="490" y="98" style="font-size:13px">PR comment, three parts</text>
+  <rect class="b-del" x="490" y="110" width="244" height="34" rx="7" style="stroke:none"/><text class="tc t-del" x="502" y="131">missing: redact_auth_header</text>
+  <rect class="b-warn" x="490" y="150" width="244" height="34" rx="7"/><text class="ts" x="502" y="171">blind to unwired and stub code</text>
+  <rect class="b-pen" x="490" y="190" width="244" height="34" rx="7" style="stroke:none"/><text class="ts t-pen" x="502" y="211">precision 0.80, CI [0.723, 0.885]</text>
 
-    <path d="M352 206 V256" stroke="#B5563B" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#a5c)"/>
-    <rect x="252" y="260" width="200" height="50" rx="12" fill="#F4DCCF" stroke="#D97757"/>
-    <text x="352" y="281" text-anchor="middle" font-size="12.5" font-weight="600" fill="#8E3F29">Re-run drops below 0.80</text>
-    <text x="352" y="299" text-anchor="middle" font-size="11" fill="#8E3F29">gate suspends itself</text>
-  </g>
+  <path class="ln-del dash" d="M352 206V256" marker-end="url(#mdd)"/>
+  <rect class="b-del" x="252" y="260" width="200" height="50" rx="10"/>
+  <text class="t-h t-del" x="352" y="281" text-anchor="middle" style="font-size:12.5px">Re-run drops below 0.80</text>
+  <text class="ts t-del" x="352" y="299" text-anchor="middle" style="font-size:11px">gate suspends itself</text>
 </svg>
+        </div>
         <figcaption class="cap"><b>Every design choice here comes from a measurement above.</b> Checklist input from Finding 5, the disclaimer from Finding 2, the low-noise detector from Finding 1.</figcaption>
       </figure>
 
-      <div class="challenge">
+      <div class="challenge wide">
         <span class="pre">Decision</span>
         <h3>Why the higher-MCC judge doesn't ship</h3>
         <dl>
-          <div class="row k1"><dt>Fails the bar</dt><dd>The gate's acceptance criterion is precision at or above 0.80. The judge's precision is 0.74. Shipping it would mean overriding my own threshold because I preferred a different metric.</dd></div>
-          <div class="row k2"><dt>Cost of noise</dt><dd>One false positive costs seconds of attention. A thousand produce a team that scrolls past every comment the tool posts. A paid API call per pull request adds an operational dependency on top.</dd></div>
-          <div class="row k3"><dt>What ships</dt><dd>The deterministic rule, with a 0.043 false positive rate. Offline, reproducible and free per run.</dd></div>
-          <div class="row k4"><dt>Trade-off</dt><dd>It catches under half of all omissions, and it says so in every comment.</dd></div>
+          <div class="row r-del"><dt>Fails the bar</dt><dd>The gate's acceptance criterion is precision at or above 0.80. The judge's precision is 0.74. Shipping it would mean overriding my own threshold because I preferred a different metric.</dd></div>
+          <div class="row r-warn"><dt>Cost of noise</dt><dd>One false positive costs seconds of attention. A thousand produce a team that scrolls past every comment the tool posts. A paid API call per pull request adds an operational dependency on top.</dd></div>
+          <div class="row r-add"><dt>What ships</dt><dd>The deterministic rule, with a 0.043 false positive rate. Offline, reproducible and free per run.</dd></div>
+          <div class="row"><dt>Trade-off</dt><dd>It catches under half of all omissions, and it says so in every comment.</dd></div>
         </dl>
       </div>
 
       <h3>The gate publishes its own confidence interval</h3>
-      <div class="panel">
-        <div class="panel-h"><h4>Offline precision against the acceptance bar</h4></div>
-        <svg viewBox="0 0 600 96" width="100%" role="img" aria-label="Precision 0.8018 with 95% interval 0.723 to 0.885, straddling the 0.80 bar" font-family="'Instrument Sans',Arial,sans-serif">
-          <line x1="20" y1="54" x2="580" y2="54" stroke="#DEDAD0"/>
-          <rect x="156.3" y="47" width="302.4" height="14" rx="7" fill="#E4ECF4"/>
-          <line x1="300" y1="12" x2="300" y2="76" stroke="#B5563B" stroke-width="1.5" stroke-dasharray="4 3"/>
-          <text x="294" y="22" font-size="13" fill="#B5563B" text-anchor="end">bar 0.80</text>
-          <circle cx="303.4" cy="54" r="6" fill="#141413" stroke="#fff" stroke-width="2"/>
-          <text x="156.3" y="40" font-size="12" fill="#5E5D59" text-anchor="middle">0.723</text>
-          <text x="458.7" y="40" font-size="12" fill="#5E5D59" text-anchor="middle">0.885</text>
-          <text x="20" y="92" font-size="12" fill="#8A877D">0.65</text>
-          <text x="580" y="92" font-size="12" fill="#8A877D" text-anchor="end">0.95</text>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Offline precision against the acceptance bar</h4></div>
+        <svg class="ci-svg" viewBox="0 0 600 96" role="img" aria-label="Precision 0.8018 with 95% interval 0.723 to 0.885, straddling the 0.80 bar">
+          <line class="bar-l" x1="20" y1="54" x2="580" y2="54"/>
+          <rect class="band" x="156.3" y="47" width="302.4" height="14" rx="7"/>
+          <line class="bar-v" x1="300" y1="12" x2="300" y2="76"/>
+          <text class="bar-t" x="294" y="22" text-anchor="end">bar 0.80</text>
+          <circle class="pt" cx="303.4" cy="54" r="6"/>
+          <text x="156.3" y="40" text-anchor="middle">0.723</text>
+          <text x="458.7" y="40" text-anchor="middle">0.885</text>
+          <text class="t-f" x="20" y="92">0.65</text>
+          <text class="t-f" x="580" y="92" text-anchor="end">0.95</text>
         </svg>
         <p class="cap">Point estimate 0.8018 clears the bar by 0.0018, and the 95% interval straddles it on both sides. A margin this thin is one you should expect to renegotiate.</p>
       </div>
 
-      <div class="bot">
-        <header><span class="av"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M5 9h14M5 13h9" stroke="#FAF9F5" stroke-width="2.5" stroke-linecap="round"/></svg></span><span>The CI gate commented on the demo pull request</span></header>
+      <div class="bot wide">
+        <header><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="mk-bg" x="1.5" y="1.5" width="21" height="21" rx="6"/><path class="mk-c" d="M7.5 15.5L12 8l4.5 7.5" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>The CI gate commented on the demo pull request</span></header>
         <div class="bd">
           <p>1 checklist requirement is missing from this diff:</p>
           <div class="miss">redact_auth_header in client.py is not defined</div>
           <p class="warn">This gate only detects symbols that are entirely missing. It cannot see unwired or stubbed code (0.00 recall on both), so a clean report does not mean nothing is unwired or stubbed.</p>
-          <p class="warn" style="margin:0">Offline precision 0.80 against a 0.80 bar, 95% interval [0.723, 0.885], computed live from the frozen baseline.</p>
+          <p class="info">Offline precision 0.80 against a 0.80 bar, 95% interval [0.723, 0.885], computed live from the frozen baseline.</p>
         </div>
       </div>
       <p class="illus-note">Layout of the comment's three parts. Wording paraphrased, symbol matches the illustrative example above.</p>
@@ -887,15 +975,18 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       <p>A test asserts the caveat is computed live rather than hardcoded, by swapping the baseline fixture and checking the rendered numbers change.</p>
       <h3>Verified live, not only in pytest</h3>
       <p>A throwaway pull request with a deliberately missing symbol. The workflow fired in eight seconds and posted a comment byte-identical to the renderer's expected output. 132 of 132 tests passing.</p>
-      <div class="panel">
-        <div class="panel-h"><h4>Latency per instance, drawn to scale against the 10-second budget</h4></div>
-        <div class="lat"><div class="trk"><div class="fill" style="width:.265%"></div></div><div class="row"><span>p50 12.0ms, p95 26.5ms</span><span>10,000ms</span></div></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Latency per instance, drawn to scale against the 10-second budget</h4></div>
+        <div class="lat"><span class="trk"><span class="fill" style="width:.265%"></span></span><div class="row"><span>p50 12.0ms, p95 26.5ms</span><span>10,000ms</span></div></div>
         <p class="cap">The sliver on the left is the p95. It uses 0.27% of the allowed time.</p>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section id="f7">
-      <h2><span class="k">Finding 7</span>A model that ranks well and forecasts badly</h2>
+  <section class="sec" id="f7" data-kind="Finding 7" data-short="A calibrated model?">
+    <div class="gut"><span class="kind">Finding 7</span></div>
+    <div class="body">
+      <h2>A model that ranks well and forecasts badly</h2>
       <p class="upd">Added 23 September 2026.</p>
       <p>The judge that won Finding 1 hands back a bare label. A gate built on it has nothing to threshold and no way to say "not sure, ask a human". So I tried a different kind of model. TypeSafe's Jev is a "System One" model: you send it state and typed yes/no questions, and it returns a probability for each one in about 100 milliseconds. The vendor describes those probabilities as calibrated. Its public documentation gives no calibration numbers.</p>
       <p>This corpus is a good place to check that claim, because every requirement has a ground-truth label. Jev (B7) saw exactly the diff the mid-tier judge saw, under the same 6,000-token truncation, and was scored twice: as a judge, with paired MCC like every other detector, and as a forecaster, with Brier score, expected calibration error and a reliability table.</p>
@@ -903,19 +994,19 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
       <h3>Everything was fixed before the first call</h3>
       <p>Two variants, one compound question per requirement and three split questions (defined, wired, real body) combined with a minimum. A 0.5 threshold. A 0.3 to 0.7 "ask a human" band, taken from TypeSafe's own docs. And a pass/fail rule for "calibrated": ECE at most 0.05, every well-populated bin within 0.10 of the diagonal, and positive skill over the base rate. All of it went into <code>ASSUMPTIONS.md</code> and was merged on GitHub before any real request, so the timestamp is not mine to edit. The question text is hash-locked by a test. The full sweep cost about 18 cents.</p>
 
-      <div class="panel">
-        <div class="panel-h"><h4>Paired ΔMCC, Jev minus rival</h4><span class="tag">Left of zero, Jev loses</span></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Paired ΔMCC, Jev minus rival</h4><span class="tag">Left of zero, Jev loses</span></div>
         <div class="forest" id="forest7"></div>
-        <div class="axis" style="grid-template-columns:minmax(7rem,11rem) 1fr 11rem"><span></span><div><span>−0.5</span><span>0</span><span>+0.5</span></div><span></span></div>
+        <div class="axis forest-axis"><span></span><div><span>−0.5</span><span>0</span><span>+0.5</span></div><span></span></div>
         <p class="cap">Cluster bootstrap over 310 instances, paired on identical inputs. The split variant against the deterministic rule is the only interval that touches zero.</p>
       </div>
 
       <p><strong>Jev loses to the mid-tier judge in both variants, and the calibration claim is not supported on this task.</strong> All three calibration conditions fail for both variants. The split variant beats the compound one on every measure, which is what TypeSafe's advice against compound questions predicts, but it still ends up statistically tied with the deterministic rule rather than anywhere near the judge.</p>
 
-      <div class="panel">
-        <div class="panel-h"><h4>Reliability: what Jev says against what happened</h4><span class="tag">On the diagonal means calibrated</span></div>
+      <div class="fig wide">
+        <div class="fig-h"><h4>Reliability: what Jev says against what happened</h4><span class="tag">On the diagonal means calibrated</span></div>
         <div class="rel" id="rel"></div>
-        <div class="legend"><span><i style="background:#3A6FB0"></i>One compound question, hollow</span><span><i style="background:#D97757"></i>Three split questions, filled</span><span><i style="background:#CFCABD;height:2px;vertical-align:.2rem"></i>Perfect calibration</span></div>
+        <div class="legend"><span><i class="sw-ring"></i>One compound question, hollow</span><span><i class="sw-dot"></i>Three split questions, filled</span><span><i class="sw-diag"></i>Perfect calibration</span></div>
         <p class="cap">Each point is one bin of predicted P(omitted). Point area follows the number of requirements in the bin. Hover or tap a point for its numbers.</p>
         <details class="table"><summary>Show the bins as a table</summary><div class="tw" id="reltable"></div></details>
       </div>
@@ -926,15 +1017,18 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
 
       <h3>What the mocks could not catch</h3>
       <p>The harness passed every offline test before it met the real service. Four things still went wrong, and each is recorded in the assumptions log.</p>
-      <ul class="open">
+      <ul class="notes">
         <li><strong>The interpreter changed the corpus.</strong> Python 3.14 implements PEP 758, which lets <code>except A, B:</code> parse without parentheses. Old Python 2 code like <code>except BadSignature, e:</code> suddenly became valid, and five Python 2 commits slipped into one repository's corpus, 35 instances instead of 30. Rebuilt under 3.12, it matched exactly. The run now refuses to start on 3.14.</li>
         <li><strong>A CDN blocked the default user agent.</strong> The first real request came back as Cloudflare error 1010, because Python's urllib announces itself by default and bot rules reject it. A local mock server has no Cloudflare in front of it.</li>
         <li><strong>One 520 was not retried.</strong> An origin error outside the retry list dropped one variant. It was retried after the fix, which fills a gap rather than re-rolling a result, since no answer had ever been produced.</li>
         <li><strong>Truncation made some inputs identical.</strong> In five variants the mutation falls past the 6,000-token cut, so the mutated diff is byte-identical to the clean one while the labels differ. Every judge, the winning one included, gets one of each pair wrong by construction. Two flask commits also turned out to be the same change. Both are documented, not excluded, because dropping cases after seeing results is the filtering this project exists to avoid.</li>
       </ul>
-    </section>
+    </div>
+  </section>
 
-    <section id="open">
+  <section class="sec" id="open" data-kind="Limits" data-short="What's still open">
+    <div class="gut"><span class="kind">Limits</span></div>
+    <div class="body">
       <h2>What's still open</h2>
       <ul class="open">
         <li><strong>Unwired remains underpowered</strong> at n=19 against a target of 100. Documented as directional rather than conclusive. It does not block the gate, whose criterion is overall precision, but it is not resolved.</li>
@@ -944,19 +1038,27 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li><strong>The corpus has a duplicate commit and five truncation-identical variants.</strong> Deduplicating by diff hash at build time, then re-running every detector, is the fix.</li>
         <li><strong>The gate has been verified, not adopted.</strong> One live demonstration on my own repository proves the mechanism works. It is not evidence of value in a real team's workflow.</li>
       </ul>
-    </section>
+    </div>
+  </section>
 
-    <section id="lessons" class="lessons">
+  <section class="sec" id="lessons" data-kind="Advice" data-short="Advice">
+    <div class="gut"><span class="kind">Advice</span></div>
+    <div class="body">
       <h2>What I'd tell someone starting something similar</h2>
-      <p><strong>Write the falsification condition before the code.</strong>Every task here had one except the final packaging task, and that was the only one where I found myself uncertain what would count as failure.</p>
-      <p><strong>Pick the headline metric before seeing any numbers.</strong>Had I chosen afterwards, an F1 of 0.44 for a baseline that flags everything would have made a much more comfortable table.</p>
-      <p><strong>Match your interval structure to your data's dependence structure.</strong>Getting this wrong does not produce a wrong point estimate. It produces intervals that lie, invisibly.</p>
-      <p><strong>Build the ablation that could destroy your result.</strong>Finding 5 exists because I asked what my own benchmark assumed. It returned the most negative number in the project and the most useful one.</p>
-      <p><strong>Pin the interpreter, not just the dependencies.</strong>A stdlib-only project still changed its own corpus when Python moved from 3.12 to 3.14. The full-corpus alignment check caught it. A 20-instance spot check would not have.</p>
-      <p><strong>A tool that hides its own error bars will be trusted exactly once.</strong>For anything that posts into a developer's workflow, uncertainty belongs in the output, not the appendix.</p>
-    </section>
+      <div class="lessons-list">
+        <p><strong>Write the falsification condition before the code.</strong>Every task here had one except the final packaging task, and that was the only one where I found myself uncertain what would count as failure.</p>
+        <p><strong>Pick the headline metric before seeing any numbers.</strong>Had I chosen afterwards, an F1 of 0.44 for a baseline that flags everything would have made a much more comfortable table.</p>
+        <p><strong>Match your interval structure to your data's dependence structure.</strong>Getting this wrong does not produce a wrong point estimate. It produces intervals that lie, invisibly.</p>
+        <p><strong>Build the ablation that could destroy your result.</strong>Finding 5 exists because I asked what my own benchmark assumed. It returned the most negative number in the project and the most useful one.</p>
+        <p><strong>Pin the interpreter, not just the dependencies.</strong>A stdlib-only project still changed its own corpus when Python moved from 3.12 to 3.14. The full-corpus alignment check caught it. A 20-instance spot check would not have.</p>
+        <p><strong>A tool that hides its own error bars will be trusted exactly once.</strong>For anything that posts into a developer's workflow, uncertainty belongs in the output, not the appendix.</p>
+      </div>
+    </div>
+  </section>
 
-    <section id="refs">
+  <section class="sec" id="refs" data-kind="Sources" data-short="References">
+    <div class="gut"><span class="kind">Sources</span></div>
+    <div class="body">
       <h2>References</h2>
       <ol class="refs">
         <li>Chicco, D. &amp; Jurman, G. (2020). The advantages of the Matthews correlation coefficient over F1 score and accuracy in binary classification evaluation. <em>BMC Genomics</em> 21:6.</li>
@@ -974,40 +1076,83 @@ noscript img{width:100%;border-radius:12px;margin-top:1rem}
         <li>TypeSafe AI (2026). Jev documentation: Noul questions, confidence, and Jev 1.13 jaggedness. docs.typesafe.ai</li>
         <li>PEP 758: Allow except and except* expressions without parentheses. peps.python.org/pep-0758</li>
       </ol>
-    </section>
-  </article>
-</div>
+    </div>
+  </section>
+</main>
 
-<footer class="site-footer">
-  <div class="inner">
-    <div><strong>OmitBench Engineering Blog</strong><br>Corpus, detectors, CI gate and the full assumptions log, including the numbers that did not work out.</div>
-    <div><a href="https://github.com/Avnish1505/Omitbench">github.com/Avnish1505/Omitbench</a></div>
+<footer class="site">
+  <div class="wrap">
+    <p><strong>OmitBench Engineering Blog</strong><br>Corpus, detectors, CI gate and the full assumptions log, including the numbers that did not work out.</p>
+    <nav aria-label="Elsewhere"><a href="https://github.com/Avnish1505/Omitbench">github.com/Avnish1505/Omitbench</a><a href="https://avnish1505.github.io/">Avnish Singh</a></nav>
   </div>
 </footer>
+
+<noscript><style>.ck,.bars,.forest,.heat,.rel,.mcc-axis,.tax-stats,#play .play{display:none}</style></noscript>
 
 <script>
 (function(){
 "use strict";
-const $=s=>document.querySelector(s);
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const fmt=(v,d=3)=>{const s=Math.abs(v).toFixed(d);return v<0?'−'+s:s};
 const sgn=(v,d=3)=>(v>0?'+':'')+fmt(v,d);
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const root=document.documentElement;
+
+/* theme */
+$('#theme').addEventListener('click',()=>{
+  const cur=root.getAttribute('data-theme');
+  const dark=cur?cur==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  const next=dark?'light':'dark';root.setAttribute('data-theme',next);
+  try{localStorage.setItem('ob-theme',next)}catch(e){}
+});
 
 /* reading time */
 const words=($('#prose').textContent||'').trim().split(/\s+/).length;
 $('#read-time').textContent=Math.max(1,Math.round(words/230))+' min read';
 
-/* progress, topbar, toc */
-const bar=$('.progress span'),top=$('.topbar');
-function onScroll(){const h=document.documentElement;bar.style.transform='scaleX('+(h.scrollTop/(h.scrollHeight-h.clientHeight))+')';top.classList.toggle('is-scrolled',h.scrollTop>8)}
-addEventListener('scroll',onScroll,{passive:true});onScroll();
-const links=[...document.querySelectorAll('#toc-list a')];
-const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('is-active',a.getAttribute('href')==='#'+e.target.id))}),{rootMargin:'-15% 0px -75% 0px'});
-links.forEach(a=>{const s=document.querySelector(a.getAttribute('href'));if(s)io.observe(s)});
-const toc=$('.toc'),tt=$('.toc-toggle');
-tt.addEventListener('click',()=>{const o=toc.classList.toggle('is-open');tt.setAttribute('aria-expanded',o)});
-links.forEach(a=>a.addEventListener('click',()=>{toc.classList.remove('is-open');tt.setAttribute('aria-expanded',false)}));
+/* short version as status checks */
+const CK=[
+ ['fail','#f1','Does a deterministic detector beat LLM judges?','No, not overall','Paired ΔMCC vs mid-tier judge −0.202 [−0.252, −0.150]'],
+ ['pass','#f1','Does it beat naive grep and a reasoning judge?','Yes','+0.128 [+0.103, +0.156] and +0.111 [+0.055, +0.164]'],
+ ['fail','#f2','Does it generalise past missing symbols?','No','0.00 recall on unwired and stubbed code, by construction'],
+ ['pass','#f4','Do false positive rates transfer to real repos?','Roughly','Real 0.062 against synthetic 0.043'],
+ ['fail','#f5','Can requirements be extracted from issue text?','No','F1 0.066 overall, 0.220 on production symbols'],
+ ['fail','#f5','What does that cost detection?','Everything','MCC +0.499 falls to −0.935'],
+ ['warn','#ship','Is it deployable?','Narrowly','FPR 0.043, p95 26.5ms, verified live on GitHub'],
+ ['fail','#f7','Can a model sold as calibrated replace the judge?','No','ΔMCC vs mid-tier judge −0.259 [−0.316, −0.203], ECE 0.323']];
+const ICON={
+ fail:'<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+ pass:'<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.2 8.2l1.9 1.9 3.7-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+ warn:'<circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/>'};
+const LABEL={fail:'Failed',pass:'Passed',warn:'Narrow pass'};
+$('#checks').innerHTML=CK.map(([k,h,q,v,e])=>`<li class="${k}"><svg class="ic" viewBox="0 0 16 16" role="img" aria-label="${LABEL[k]}">${ICON[k]}</svg><a href="${h}">${q}</a><span class="v">${v}</span><span class="ev">${e}</span></li>`).join('');
 
-function seg(id,fn){const g=document.getElementById(id);g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;g.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));fn(b.dataset)})}
+/* progress, current section, contents */
+const prog=$('.prog');
+const secs=$$('.sec[data-short]');
+$('#index-list').innerHTML=secs.map(s=>`<li><a href="#${s.id}"><span>${esc(s.dataset.kind)}</span>${esc(s.dataset.short)}</a></li>`).join('');
+const idxLinks=$$('#index-list a'),now=$('#now');
+let cur=null;
+function track(){
+  const h=root,m=h.scrollHeight-h.clientHeight;
+  prog.style.transform='scaleX('+(m>0?Math.min(1,h.scrollTop/m):0)+')';
+  const y=innerHeight*.32;let c=null;
+  for(const s of secs){if(s.getBoundingClientRect().top<=y)c=s}
+  if(c!==cur){cur=c;
+    secs.forEach(x=>x.classList.toggle('is-now',x===c));
+    idxLinks.forEach(a=>a.setAttribute('aria-current',String(!!c&&a.getAttribute('href')==='#'+c.id)));
+    now.innerHTML=c?`<b>${esc(c.dataset.kind)}</b>${esc(c.dataset.short)}`:'';}
+}
+addEventListener('scroll',track,{passive:true});addEventListener('resize',track);track();
+const ib=$('#index-btn'),ip=$('#index');
+function openIdx(o){ip.hidden=!o;ib.setAttribute('aria-expanded',String(o));
+  if(o){(ip.querySelector('[aria-current="true"]')||ip.querySelector('a')).focus({preventScroll:true})}}
+ib.addEventListener('click',e=>{e.stopPropagation();openIdx(ip.hidden)});
+ip.addEventListener('click',e=>{if(e.target.closest('a'))openIdx(false)});
+document.addEventListener('click',e=>{if(!ip.hidden&&!ip.contains(e.target))openIdx(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!ip.hidden){openIdx(false);ib.focus()}});
+
+function seg(id,fn){const g=document.getElementById(id);g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;g.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));fn(b.dataset)})}
 
 /* PR demo */
 let checked=false;const prbtn=$('#prbtn');
@@ -1017,17 +1162,39 @@ prbtn.addEventListener('click',()=>{checked=!checked;$('#prdemo').classList.togg
 
 /* taxonomy */
 const TAX={
- absent:{name:'Absent, n = 281',desc:'The required symbol is never defined anywhere in the patch.',code:[['a','+def parse_retry_after(value):'],['a','+    return int(value) if value.isdigit() else 0'],['c',' '],['c','  def send(request):'],['c','      headers = request.headers'],['c','      return transport.send(request)'],['gap','  redact_auth_header: no definition exists']],hit:1,p1:.96,b5:.84,n:'The rule asks whether the symbol is defined. Here it is not, so the rule catches it.'},
- unwired:{name:'Unwired, n = 19',desc:'The symbol is defined but nothing ever calls it. Imports work and the code looks finished.',code:[['a','+def redact_auth_header(headers):'],['a','+    headers["Authorization"] = "[redacted]"'],['a','+    return headers'],['c',' '],['c','  def send(request):'],['c','      headers = request.headers'],['gap','      # redact_auth_header(headers) never called'],['c','      return transport.send(request)']],hit:0,p1:0,b5:.21,n:'The symbol exists, so the rule reports it present. This judge catches 21%. Small sample, treat as directional.'},
+ absent:{name:'Absent, n = 281',desc:'The required symbol is never defined anywhere in the patch.',code:[['a','+def parse_retry_after(value):'],['a','+    return int(value) if value.isdigit() else 0'],['c',' '],['c','  def send(request):'],['c','      headers = request.headers'],['c','      return transport.send(request)'],['gap','redact_auth_header: no definition exists']],hit:1,p1:.96,b5:.84,n:'The rule asks whether the symbol is defined. Here it is not, so the rule catches it.'},
+ unwired:{name:'Unwired, n = 19',desc:'The symbol is defined but nothing ever calls it. Imports work and the code looks finished.',code:[['a','+def redact_auth_header(headers):'],['a','+    headers["Authorization"] = "[redacted]"'],['a','+    return headers'],['c',' '],['c','  def send(request):'],['c','      headers = request.headers'],['gap','    # redact_auth_header(headers) never called'],['c','      return transport.send(request)']],hit:0,p1:0,b5:.21,n:'The symbol exists, so the rule reports it present. This judge catches 21%. Small sample, treat as directional.'},
  stub:{name:'Stub, n = 309',desc:'The symbol is defined with an empty or trivial body.',code:[['a','+def redact_auth_header(headers):'],['gap','+    pass'],['c',' '],['c','  def send(request):'],['c','      headers = redact_auth_header(request.headers)'],['c','      return transport.send(request)']],hit:0,p1:0,b5:.87,n:'Defined and even called, so the rule sees nothing wrong. The judge reads the body and catches 87%.'}};
 function showTax(k){const t=TAX[k];
- $('#taxcode').innerHTML=t.code.map(([c,l])=>`<span class="${c}">${l.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`).join('');
+ $('#taxcode').innerHTML=t.code.map(([c,l])=>`<span class="${c}">${esc(l)}</span>`).join('');
  $('#taxname').textContent=t.name;$('#taxdesc').textContent=t.desc;
  const v=$('#taxverdict');v.className='verdict '+(t.hit?'hit':'blind');v.textContent=t.hit?'Deterministic rule catches it':'Deterministic rule is blind here';
  $('#taxp1').style.width=t.p1*100+'%';$('#taxp1v').textContent=t.p1.toFixed(2);
  $('#taxb5').style.width=t.b5*100+'%';$('#taxb5v').textContent=t.b5.toFixed(2);
  $('#taxn').textContent=t.n}
 seg('taxseg',d=>showTax(d.k));showTax('absent');
+
+/* MCC vs F1 playground */
+(function(){
+ const N=2184,BR=.279,pos=N*BR,neg=N-pos,r=$('#pr'),f=$('#pf');
+ function calc(R,F){const tp=R*pos,fn=pos-tp,fp=F*neg,tn=neg-fp;const P=tp+fp>0?tp/(tp+fp):0;const f1=P+R>0?2*P*R/(P+R):0;const d=Math.sqrt((tp+fp)*(tp+fn)*(tn+fp)*(tn+fn));return{P,f1,mcc:d>0?(tp*tn-fp*fn)/d:0}}
+ function upd(){const R=+r.value,F=+f.value,m=calc(R,F);
+  $('#prv').textContent=R.toFixed(3);$('#pfv').textContent=F.toFixed(3);
+  $('#pp').textContent=m.P.toFixed(3);$('#ppf').style.width=m.P*100+'%';
+  $('#pf1').textContent=m.f1.toFixed(3);$('#pf1f').style.width=m.f1*100+'%';
+  $('#pmcc').textContent=Math.abs(m.mcc)<.0005?'0.000':sgn(m.mcc);
+  const mf=$('#pmccf');mf.classList.toggle('neg',m.mcc<0);
+  mf.style.left=(m.mcc<0?50+m.mcc*50:50)+'%';mf.style.width=Math.abs(m.mcc)*50+'%';
+  let note='';
+  if(m.f1>=.35&&Math.abs(m.mcc)<.1)note='F1 still looks respectable. MCC says this detector cannot tell omitted code from implemented code.';
+  else if(m.mcc<=-.1)note='Negative MCC: the detector is anti-correlated with the truth. F1 just looks small.';
+  else if(m.mcc>=.6)note='High on both. MCC only climbs this far when all four confusion-matrix cells cooperate.';
+  else note='Move the false positive rate toward 1 and watch F1 hold up while MCC falls toward zero.';
+  $('#playnote').textContent=note}
+ r.addEventListener('input',upd);f.addEventListener('input',upd);
+ $$('#play .presets button').forEach(b=>b.addEventListener('click',()=>{r.value=b.dataset.r;f.value=b.dataset.f;upd()}));
+ upd();
+})();
 
 /* detectors */
 const D=[
@@ -1048,21 +1215,23 @@ db.innerHTML=D.map(d=>`<span class="lab">${d.name}<small>${d.id}</small></span><
 const rows=[...db.querySelectorAll('.trk')],vals=[...db.querySelectorAll('.val')],labs=[...db.querySelectorAll('.lab')];
 function showMet(m,flash){D.forEach((d,i)=>{const v=d[m];rows[i].querySelector('.bar').style.width=v*100+'%';
  const ci=rows[i].querySelector('.ci');
- if(m==='MCC'&&d.hi>d.lo){ci.style.left=d.lo*100+'%';ci.style.width=(d.hi-d.lo)*100+'%';ci.style.opacity=1;ci.title=`95% CI [${d.lo}, ${d.hi}]`}else ci.style.opacity=0;
+ if(m==='MCC'&&d.hi>d.lo){ci.style.left=d.lo*100+'%';ci.style.width=(d.hi-d.lo)*100+'%';ci.style.opacity=1;ci.title=`95% CI [${d.lo.toFixed(3)}, ${d.hi.toFixed(3)}]`}else{ci.style.opacity=0;ci.removeAttribute('title')}
  vals[i].textContent=(m==='MCC'||m==='FPR')?v.toFixed(3):v.toFixed(2)});
  $('#detnote').textContent=NOTES[m];
  if(flash&&m==='F1'){[labs[1],rows[1],vals[1]].forEach(el=>{el.classList.remove('row-flash');void el.offsetWidth;el.classList.add('row-flash')})}}
 seg('metseg',d=>showMet(d.m,true));showMet('MCC');
 $('#dettable').innerHTML='<table class="data"><thead><tr><th>Detector</th><th>P</th><th>R</th><th>F1</th><th>MCC</th><th>MCC 95% CI</th><th>FPR</th></tr></thead><tbody>'+D.map(d=>`<tr><td>${d.id} ${d.name}</td><td>${d.P.toFixed(2)}</td><td>${d.R.toFixed(2)}</td><td>${d.F1.toFixed(2)}</td><td>${d.MCC.toFixed(3)}</td><td>[${d.lo.toFixed(3)}, ${d.hi.toFixed(3)}]</td><td>${d.FPR.toFixed(3)}</td></tr>`).join('')+'</tbody></table>';
 
-/* forest */
-const F=[{n:'vs line-grep',v:.128,lo:.103,hi:.156},{n:'vs judge, gpt-oss-120b',v:.111,lo:.055,hi:.164},{n:'vs judge, mistral-medium-3',v:-.202,lo:-.252,hi:-.150}];
-const x=v=>(v+.3)/.6*100;
-$('#forest').innerHTML=F.map(f=>`<span>${f.n}</span><span class="trk ${f.v>0?'pos':'neg'}"><span class="zero"></span><span class="ci" style="left:${x(f.lo)}%;width:${x(f.hi)-x(f.lo)}%"></span><span class="pt" style="left:${x(f.v)}%"></span></span><span class="val"><b>${sgn(f.v)}</b> [${sgn(f.lo)}, ${sgn(f.hi)}]</span>`).join('');
+/* forest plots */
+function forest(el,data,span){const x=v=>(v+span)/(2*span)*100;
+ el.innerHTML=data.map(f=>{const tie=f.lo<=0&&f.hi>=0,cls=tie?'':f.v>0?'pos':'neg';
+  return `<span>${f.n}</span><span class="trk ${cls}"><span class="zero"></span><span class="ci" style="left:${x(f.lo)}%;width:${x(f.hi)-x(f.lo)}%"></span><span class="pt" style="left:${x(f.v)}%"></span></span><span class="val"><b>${sgn(f.v)}</b> [${sgn(f.lo)}, ${sgn(f.hi)}]${tie?' tie':''}</span>`}).join('')}
+forest($('#forest'),[{n:'vs line-grep',v:.128,lo:.103,hi:.156},{n:'vs judge, gpt-oss-120b',v:.111,lo:.055,hi:.164},{n:'vs judge, mistral-medium-3',v:-.202,lo:-.252,hi:-.150}],.3);
+forest($('#forest7'),[{n:'Compound vs judge',v:-.408,lo:-.465,hi:-.347},{n:'Split vs judge',v:-.259,lo:-.316,hi:-.203},{n:'Compound vs rule',v:-.206,lo:-.262,hi:-.144},{n:'Split vs rule',v:-.057,lo:-.117,hi:.003}],.5);
 
 /* heat */
 const H=[['Line-grep',.65,0,0],['Judge, gpt-oss-120b',.98,.68,.99],['Judge, mistral-medium-3',.84,.21,.87],['Deterministic rule',.96,0,0]];
-const cell=v=>`<td style="background:rgba(20,20,19,${.05+v*.9});color:${v<.5?'#141413':'#FAF9F5'}">${v.toFixed(2)}</td>`;
+const cell=v=>v===0?'<td class="zero">0.00</td>':`<td style="background:color-mix(in srgb,var(--pencil) ${Math.round(8+v*82)}%,var(--sheet));color:${v>=.5?'var(--sheet)':'var(--ink)'}">${v.toFixed(2)}</td>`;
 $('#heat').innerHTML='<thead><tr><th></th><th>Absent <small>n=281</small></th><th>Unwired <small>n=19</small></th><th>Stub <small>n=309</small></th></tr></thead><tbody>'+H.map(r=>`<tr><th scope="row">${r[0]}</th>${cell(r[1])}${cell(r[2])}${cell(r[3])}</tr>`).join('')+'</tbody>';
 
 function simple(el,items,max,ref){el.innerHTML=items.map(it=>`<span class="lab">${it.n}${it.s?`<small>${it.s}</small>`:''}</span><span class="trk"><span class="bar ${it.c||''}" style="width:${it.v/max*100}%"></span>${ref!=null?`<span class="ref" style="left:${ref/max*100}%"></span>`:''}</span><span class="val">${it.t}</span>`).join('')}
@@ -1075,42 +1244,39 @@ const C=[
  {P:.802,R:.445,F1:.572,MCC:.499,note:'Requirements computed from the gold patch. This is the perfect-extraction oracle behind every earlier number, so +0.499 is an upper bound.'},
  {P:.923,R:.020,F1:.039,MCC:.006,note:'Symbols come from the extractor, with oracle paths substituted where the symbol matched. Precision recovers, recall collapses to 0.020. No signal.'},
  {P:.046,R:.062,F1:.053,MCC:-.935,cm:[38,791,571,7],note:'The literal pipeline, extracted paths used as-is. 791 false alarms against 38 real catches. Strongly anti-correlated with the truth.'}];
-$('#taxstats').innerHTML=['Precision','Recall','F1'].map(n=>`<div><span class="nm">${n}</span><div class="trk"><span class="fill"></span></div><b></b></div>`).join('');
-function showCond(i){const c=C[i],mk=$('#mccmk');
- mk.style.left=((c.MCC+1)/2*100)+'%';mk.style.color=c.MCC<0?'#B5563B':c.MCC>.1?'#4A5A36':'#3D3D3A';
- $('#mccv').textContent='MCC '+sgn(c.MCC);
- [...document.querySelectorAll('#taxstats > div')].forEach((s,j)=>{const v=[c.P,c.R,c.F1][j];s.querySelector('.fill').style.width=v*100+'%';s.querySelector('b').textContent=v.toFixed(3)});
+$('#taxstats').innerHTML=['Precision','Recall','F1'].map(n=>`<div><span>${n}</span><span class="trk"><span class="fill"></span></span><b></b></div>`).join('');
+function showCond(i){const c=C[i],mk=$('#mccmk'),pct=(c.MCC+1)/2*100;
+ mk.style.left=pct+'%';mk.className='mk '+(c.MCC<0?'neg':c.MCC>.1?'pos':'');
+ const b=$('#mccv');b.textContent='MCC '+sgn(c.MCC);
+ b.style.transform=pct<14?'translateX(calc(50% - .9rem))':pct>86?'translateX(calc(-50% + .9rem))':'none';
+ $$('#taxstats > div').forEach((s,j)=>{const v=[c.P,c.R,c.F1][j];s.querySelector('.fill').style.width=v*100+'%';s.querySelector('b').textContent=v.toFixed(3)});
  $('#taxcm').innerHTML=c.cm?`<div class="cm"><div>True positives<b>${c.cm[0]}</b></div><div class="bad">False positives<b>${c.cm[1]}</b></div><div class="bad">Missed<b>${c.cm[2]}</b></div><div>True negatives<b>${c.cm[3]}</b></div></div>`:'';
  $('#condnote').textContent=c.note}
 seg('condseg',d=>showCond(+d.c));showCond(0);
 
-/* finding 7: forest */
-const F7=[{n:'Compound vs judge',v:-.408,lo:-.465,hi:-.347},{n:'Split vs judge',v:-.259,lo:-.316,hi:-.203},{n:'Compound vs rule',v:-.206,lo:-.262,hi:-.144},{n:'Split vs rule',v:-.057,lo:-.117,hi:.003}];
-const x7=v=>(v+.5)/1*100;
-$('#forest7').innerHTML=F7.map(f=>{const tie=f.lo<=0&&f.hi>=0;return `<span>${f.n}</span><span class="trk ${tie?'':'neg'}"><span class="zero"></span><span class="ci" style="left:${x7(f.lo)}%;width:${x7(f.hi)-x7(f.lo)}%;${tie?'background:#8A877D':''}"></span><span class="pt" style="left:${x7(f.v)}%;${tie?'background:#8A877D':''}"></span></span><span class="val"><b>${sgn(f.v)}</b> [${sgn(f.lo)}, ${sgn(f.hi)}]${tie?' tie':''}</span>`}).join('');
-
 /* finding 7: reliability */
 const REL={
- single:{name:'One compound question',c:'#3A6FB0',hollow:true,b:[[.044,.019,309],[.148,.013,75],[.253,.081,37],[.353,.147,34],[.445,.085,47],[.556,.118,93],[.653,.068,190],[.751,.057,418],[.838,.120,366],[.970,.810,615]]},
- split:{name:'Three split questions',c:'#D97757',hollow:false,b:[[.059,.021,187],[.153,.006,167],[.248,.025,118],[.345,.012,167],[.445,.033,150],[.547,.033,180],[.644,.060,166],[.745,.128,219],[.848,.314,293],[.945,.853,537]]}};
+ single:{name:'One compound question',b:[[.044,.019,309],[.148,.013,75],[.253,.081,37],[.353,.147,34],[.445,.085,47],[.556,.118,93],[.653,.068,190],[.751,.057,418],[.838,.120,366],[.970,.810,615]]},
+ split:{name:'Three split questions',b:[[.059,.021,187],[.153,.006,167],[.248,.025,118],[.345,.012,167],[.445,.033,150],[.547,.033,180],[.644,.060,166],[.745,.128,219],[.848,.314,293],[.945,.853,537]]}};
 (function(){
  const el=$('#rel');
  function draw(){
- const W=Math.max(300,Math.round(el.clientWidth||600)),H=W<520?Math.round(W*.95):400,small=W<520;
- const L=small?44:52,R=12,T=14,B=46,pw=W-L-R,ph=H-T-B;
- const px=v=>L+v*pw,py=v=>T+(1-v)*ph,rad=n=>Math.max(4,Math.sqrt(n)*(small?.45:.62));
- let g='';
- for(let i=0;i<=4;i++){const v=i/4,t=v.toFixed(2).replace(/0$/,'');g+=`<line x1="${L}" x2="${W-R}" y1="${py(v)}" y2="${py(v)}" stroke="#EFECE4"/><text x="${L-8}" y="${py(v)+4}" font-size="12" fill="#8A877D" text-anchor="end">${t}</text><text x="${px(v)}" y="${H-B+18}" font-size="12" fill="#8A877D" text-anchor="${i===4?'end':i===0?'start':'middle'}">${t}</text>`}
- g+=`<line x1="${px(0)}" y1="${py(0)}" x2="${px(1)}" y2="${py(1)}" stroke="#CFCABD" stroke-width="2" stroke-dasharray="5 4"/>`;
- g+=`<text x="${L+pw/2}" y="${H-6}" font-size="12.5" fill="#5E5D59" text-anchor="middle">Jev's mean P(omitted) in the bin</text>`;
- g+=`<text transform="translate(13 ${T+ph/2}) rotate(-90)" font-size="12.5" fill="#5E5D59" text-anchor="middle">Share actually omitted</text>`;
- const wb=REL.single.b[8],lx=px(.03),ly=py(small?.78:.72);
- g+=`<line x1="${px(.30)}" y1="${ly+8}" x2="${px(wb[0])-rad(wb[2])-3}" y2="${py(wb[1])-rad(wb[2])+2}" stroke="#8A877D" stroke-width="1"/>`;
- g+=`<text x="${lx}" y="${ly-8}" font-size="12.5" fill="#3D3D3A"><tspan x="${lx}">Worst bin, compound variant:</tspan><tspan x="${lx}" dy="16">Jev said 0.84, reality was 0.12</tspan></text>`;
- for(const k of ['single','split']){const s=REL[k];
-  g+=`<polyline fill="none" stroke="${s.c}" stroke-width="2" stroke-linejoin="round" opacity=".55" points="${s.b.map(b=>px(b[0])+','+py(b[1])).join(' ')}"/>`;
-  s.b.forEach((b,i)=>{g+=`<g class="dot" tabindex="0" data-k="${k}" data-i="${i}" role="img" aria-label="${s.name}: predicted ${b[0].toFixed(3)}, observed ${b[1].toFixed(3)}, n=${b[2]}"><circle cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])}" fill="${s.hollow?'#fff':s.c}" stroke="${s.hollow?s.c:'#fff'}" stroke-width="2"/><circle cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])+8}" fill="transparent"/></g>`})}
- el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Reliability diagram. Both Jev variants sit far below the diagonal for predicted P(omitted) between 0.1 and 0.9, meaning Jev overstates omission. Only the top bin comes close to the diagonal." font-family="'Instrument Sans',Arial,sans-serif">${g}</svg><div class="rtip" id="rtip"></div>`;
+  const W=Math.max(300,Math.round(el.clientWidth||600)),small=W<520,H=small?Math.round(W*.95):400;
+  const L=small?44:52,R=12,T=14,B=46,pw=W-L-R,ph=H-T-B;
+  const px=v=>L+v*pw,py=v=>T+(1-v)*ph,rad=n=>Math.max(4,Math.sqrt(n)*(small?.45:.62));
+  let g='';
+  for(let i=0;i<=4;i++){const v=i/4,t=v.toFixed(2).replace(/0$/,'');
+   g+=`<line class="g" x1="${L}" x2="${W-R}" y1="${py(v)}" y2="${py(v)}"/><text class="tx" x="${L-8}" y="${py(v)+4}" text-anchor="end">${t}</text><text class="tx" x="${px(v)}" y="${H-B+18}" text-anchor="${i===4?'end':i===0?'start':'middle'}">${t}</text>`}
+  g+=`<line class="diag" x1="${px(0)}" y1="${py(0)}" x2="${px(1)}" y2="${py(1)}"/>`;
+  g+=`<text class="ax" x="${L+pw/2}" y="${H-6}" text-anchor="middle">Jev's mean P(omitted) in the bin</text>`;
+  g+=`<text class="ax" transform="translate(13 ${T+ph/2}) rotate(-90)" text-anchor="middle">Share actually omitted</text>`;
+  const wb=REL.single.b[8],lx=px(.03),ly=py(small?.78:.72);
+  g+=`<line class="lead" x1="${px(.30)}" y1="${ly+8}" x2="${px(wb[0])-rad(wb[2])-3}" y2="${py(wb[1])-rad(wb[2])+2}"/>`;
+  g+=`<text class="ann" x="${lx}" y="${ly-8}"><tspan x="${lx}">Worst bin, compound variant:</tspan><tspan x="${lx}" dy="16">Jev said 0.84, reality was 0.12</tspan></text>`;
+  for(const k of ['single','split']){const s=REL[k];
+   g+=`<polyline class="pl-${k}" points="${s.b.map(b=>px(b[0])+','+py(b[1])).join(' ')}"/>`;
+   s.b.forEach((b,i)=>{g+=`<g class="dot" tabindex="0" data-k="${k}" data-i="${i}" role="img" aria-label="${s.name}: predicted ${b[0].toFixed(3)}, observed ${b[1].toFixed(3)}, n=${b[2]}"><circle class="dt-${k}" cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])}"/><circle class="hit" cx="${px(b[0])}" cy="${py(b[1])}" r="${rad(b[2])+8}"/></g>`})}
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Reliability diagram. Both Jev variants sit far below the diagonal for predicted P(omitted) between 0.1 and 0.9, meaning Jev overstates omission. Only the top bin comes close to the diagonal.">${g}</svg><div class="rtip" id="rtip"></div>`;
  }
  draw();let rw=el.clientWidth;addEventListener('resize',()=>{if(Math.abs(el.clientWidth-rw)>8){rw=el.clientWidth;draw()}});
  function show(e){const tip=$('#rtip'),d=e.target.closest&&e.target.closest('.dot');if(!d){tip.classList.remove('on');return}
